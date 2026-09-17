@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ecoride-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8081
+      - key: FIREBASE_PROJECT_ID
+        value: ecoride-4d8a8
+      - key: FIREBASE_AUTH_DOMAIN
+        value: ecoride-4d8a8.firebaseapp.com
+      - key: FIREBASE_STORAGE_BUCKET
+        value: ecoride-4d8a8.firebasestorage.app
+      - key: FIREBASE_MESSAGING_SENDER_ID
+        value: 631849623028
+      - key: FIREBASE_APP_ID
+        value: 1:631849623028:web:1ab098a3a15b821b84ada1
+      - key: FIREBASE_MEASUREMENT_ID
+        value: G-LSGF9HJB2B
+      - key: CORS_ORIGIN
+        value: '*'
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION
+        value: 86400000

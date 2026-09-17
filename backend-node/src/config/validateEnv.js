@@ -5,11 +5,17 @@ const schema = Joi.object({
   PORT:       Joi.number().port().default(8081),
   LOG_LEVEL:  Joi.string().valid('error','warn','info','http','verbose','debug','silly').default('info'),
 
-  // Firebase — one of the two credential modes is required
+  // Firebase configuration
+  FIREBASE_PROJECT_ID:           Joi.string().default('ecoride-4d8a8'),
+  FIREBASE_API_KEY:              Joi.string().optional(),
+  FIREBASE_AUTH_DOMAIN:          Joi.string().optional(),
+  FIREBASE_STORAGE_BUCKET:       Joi.string().optional(),
+  FIREBASE_MESSAGING_SENDER_ID:  Joi.string().optional(),
+  FIREBASE_APP_ID:               Joi.string().optional(),
+  FIREBASE_MEASUREMENT_ID:       Joi.string().optional(),
   FIREBASE_SERVICE_ACCOUNT_PATH: Joi.string().optional(),
-  FIREBASE_PROJECT_ID:    Joi.string().when('FIREBASE_SERVICE_ACCOUNT_PATH', { is: Joi.exist(), then: Joi.optional(), otherwise: Joi.required() }),
-  FIREBASE_CLIENT_EMAIL:  Joi.string().email().when('FIREBASE_SERVICE_ACCOUNT_PATH', { is: Joi.exist(), then: Joi.optional(), otherwise: Joi.required() }),
-  FIREBASE_PRIVATE_KEY:   Joi.string().when('FIREBASE_SERVICE_ACCOUNT_PATH', { is: Joi.exist(), then: Joi.optional(), otherwise: Joi.required() }),
+  FIREBASE_CLIENT_EMAIL:         Joi.string().email().optional(),
+  FIREBASE_PRIVATE_KEY:          Joi.string().optional(),
 
   // JWT
   JWT_SECRET:     Joi.string().min(32).required().messages({ 'string.min': 'JWT_SECRET must be at least 32 characters' }),

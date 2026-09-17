@@ -22,9 +22,13 @@ async function startServer() {
     // Initialize Firebase Firestore
     initFirebase();
 
-    // Seed initial data
-    await seeder.run();
-    logger.info('✅ Firestore seeded.');
+    // Seed initial data (if Firestore credentials are authenticated)
+    try {
+      await seeder.run();
+      logger.info('✅ Firestore seeded.');
+    } catch (seedErr) {
+      logger.warn(`⚠️ Firestore seeding skipped or pending credentials: ${seedErr.message}`);
+    }
 
     server.listen(PORT, '0.0.0.0', () => {
       logger.info(`🚀 RideConnect API | port=${PORT} | env=${process.env.NODE_ENV}`);

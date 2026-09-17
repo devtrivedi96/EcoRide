@@ -7,6 +7,14 @@ const rideService = require('../services/rideService');
  * Equivalent to Spring Boot RideController - /api/rides
  */
 
+// GET /api/rides — List all available/upcoming rides
+router.get('/', authenticate, async (req, res, next) => {
+  try {
+    const rides = await rideService.getAvailableLocations();
+    res.json(rides);
+  } catch (err) { next(err); }
+});
+
 // POST /api/rides — Publish a ride
 router.post('/', authenticate, async (req, res, next) => {
   try {

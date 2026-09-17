@@ -49,7 +49,10 @@ async function login({ email, password }) {
 
 async function generatePasswordResetToken(email) {
   const user = await findOne(COLLECTIONS.USERS, 'email', email);
-  if (!user) throw new Error('User with this email not found');
+  if (!user) {
+    logger.warn(`[PASSWORD RESET] Token request ignored for unregistered email: ${email}`);
+    return;
+  }
 
   // Delete old tokens
   await removeWhere(COLLECTIONS.PASSWORD_RESET, 'userId', user.id);
@@ -59,7 +62,6 @@ async function generatePasswordResetToken(email) {
   await create(COLLECTIONS.PASSWORD_RESET, { token, userId: user.id, expiryDate });
 
   logger.warn(`[PASSWORD RESET] Token generated for ${email} (token not logged for security)`);
-
 }
 
 async function resetPassword(token, newPassword) {

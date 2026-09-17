@@ -34,6 +34,9 @@ router.post('/forgot-password', async (req, res, next) => {
     await authService.generatePasswordResetToken(req.body.email);
     res.json({ message: 'If the email exists, a reset token has been generated.' });
   } catch (err) {
+    if (err.message?.includes('credentials') || err.message?.includes('not found')) {
+      return res.json({ message: 'If the email exists, a reset token has been generated.' });
+    }
     next(err);
   }
 });
