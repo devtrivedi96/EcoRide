@@ -57,8 +57,12 @@ async function getRoute(from, to) {
   const r = json.routes[0];
   return {
     geojson: {
-      type: 'Feature',
-      geometry: r.geometry,   // GeoJSON LineString with [lng, lat] coords
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        properties: {},
+        geometry: r.geometry,
+      }],
     },
     distance: (r.distance / 1000).toFixed(1),
     duration: Math.round(r.duration / 60),
@@ -116,7 +120,7 @@ export default function MapScreen() {
       setRouteInfo({ distance: route.distance, duration: route.duration });
 
       // Fly to fit route bounds
-      const coords = route.geojson.geometry.coordinates;
+      const coords = route.geojson.features[0].geometry.coordinates;
       const lngs = coords.map(c => c[0]);
       const lats = coords.map(c => c[1]);
       cameraRef.current?.fitBounds(
@@ -140,14 +144,31 @@ export default function MapScreen() {
     setTo('');
   }
 
-  function centreOnMe() {
+  async function centreOnMe() {
     // UserLocation component handles this — fly camera to user
     cameraRef.current?.setCamera({
       zoomLevel: 16,
       animationDuration: 800,
       animationMode: 'flyTo',
-      // followUserLocation: true is handled by Camera props
     });
+
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (loc?.coords) {
+        const address = await Location.reverseGeocodeAsync({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+        if (address?.length > 0) {
+          const a = address[0];
+          const parts = [a.name, a.street, a.city || a.subregion].filter(Boolean);
+          const uniqueParts = [...new Set(parts)];
+          setFrom(uniqueParts.join(', '));
+        }
+      }
+    } catch (err) {
+      console.log('Could not reverse geocode user location', err);
+    }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
