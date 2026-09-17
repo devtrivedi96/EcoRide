@@ -1,0 +1,27 @@
+version: "3.9"
+
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# This override runs the API in dev mode (with nodemon + mounted source code)
+# and exposes the DB port for local tools like DBeaver.
+
+services:
+  db:
+    ports:
+      - "5432:5432" # expose for local DB clients
+
+  api:
+    build:
+      target: deps # only deps stage — source mounted from host
+    command: npx nodemon src/server.js
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+    volumes:
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+    ports:
+      - "8081:8081" # expose directly without Nginx
+
+  nginx:
+    profiles:
+      - prod # Nginx only starts when profile=prod

@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log*
+.env
+.env.*
+!.env.example
+logs
+*.log
+.git
+.github
+.vscode
+coverage
+dist
+README.md
+pm2.config.js
+docker-compose*.yml
+*.md
