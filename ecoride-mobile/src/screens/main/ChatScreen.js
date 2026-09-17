@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { chatApi } from '../../api/chatApi';
 import { createTripSocket } from '../../api/trackingApi';
 import Button from '../../components/Button';
@@ -7,54 +7,79 @@ import Field from '../../components/Field';
 import Screen from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../utils/theme';
-import { formatDateTime, getErrorMessage } from '../../utils/format';
+import { formatDateTime } from '../../utils/format';
 
 export default function ChatScreen({ route }) {
   const { tripId } = route.params || {};
   const { token, user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState('');
-  const [socket, setSocket] = useState(null);
+  const socketRef = useRef(null);
+  const listRef = useRef(null);
 
   useEffect(() => {
     let liveSocket;
+
     async function boot() {
       try {
-        setMessages(await chatApi.history(tripId));
-        liveSocket = createTripSocket(token);
-        liveSocket.emit('join-trip', tripId);
+        const history = await chatApi.history(tripId);
+        setMessages(history);
+
+        liveSocket = createTripSocket(token, tripId, (payload) => {
+          setMessages((current) => [...current, payload]);
+        });
+
         liveSocket.on('receive-message', (payload) => {
           setMessages((current) => [...current, payload]);
         });
-        setSocket(liveSocket);
-      } catch (error) {
-        Alert.alert('Chat unavailable', getErrorMessage(error));
+
+        liveSocket.emit('join-trip', tripId);
+        socketRef.current = liveSocket;
+      } catch {
+        // Chat history unavailable — non-fatal in mock mode
       }
     }
-    if (tripId && token) boot();
+
+    if (tripId) boot();
+
     return () => {
       liveSocket?.disconnect();
     };
   }, [tripId, token]);
 
   function send() {
-    if (!message.trim() || !socket) return;
-    socket.emit('send-message', { tripId, message: { senderEmail: user?.email, content: message.trim() } });
-    setMessages((current) => [...current, {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
+    const outgoing = {
       id: `local-${Date.now()}`,
       senderEmail: user?.email,
-      content: message.trim(),
+      content: trimmed,
       timestamp: new Date().toISOString(),
-    }]);
+    };
+
+    setMessages((current) => [...current, outgoing]);
     setMessage('');
+
+    if (socketRef.current) {
+      socketRef.current.emit('send-message', {
+        tripId,
+        message: { senderEmail: user?.email, content: trimmed },
+      });
+    }
+
+    // Scroll to bottom
+    setTimeout(() => listRef.current?.scrollToEnd?.({ animated: true }), 100);
   }
 
   return (
     <Screen scroll={false} contentStyle={styles.content}>
       <FlatList
+        ref={listRef}
         data={messages}
         keyExtractor={(item, index) => item.id || `${index}`}
         contentContainerStyle={styles.list}
+        onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.senderEmail === user?.email && styles.mine]}>
             <Text style={styles.sender}>{item.senderEmail}</Text>

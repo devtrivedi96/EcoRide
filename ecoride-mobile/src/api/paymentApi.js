@@ -1,6 +1,8 @@
 import api from './axios';
+import { MOCK_MODE } from './config';
+import { mockPaymentApi } from '../mock/mockApi';
 
-export const paymentApi = {
+const realPaymentApi = {
   wallet: () => api.get('/payments/wallet').then((res) => res.data),
   rechargeWallet: (payload) => api.post('/payments/wallet/recharge', payload).then((res) => res.data),
   payTrip: (payload) => api.post('/payments/trip/pay', payload).then((res) => res.data),
@@ -9,3 +11,5 @@ export const paymentApi = {
   verifyRazorpay: (payload) => api.post('/payments/verify-razorpay', payload).then((res) => res.data),
   logFailure: (payload) => api.post('/payments/log-failure', payload),
 };
+
+export const paymentApi = MOCK_MODE ? mockPaymentApi : realPaymentApi;

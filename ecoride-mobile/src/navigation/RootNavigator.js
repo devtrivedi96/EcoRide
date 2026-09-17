@@ -10,6 +10,7 @@ import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import DashboardScreen from '../screens/main/DashboardScreen';
 import SearchRidesScreen from '../screens/main/SearchRidesScreen';
+import MapScreen from '../screens/main/MapScreen';
 import PublishRideScreen from '../screens/main/PublishRideScreen';
 import TripsScreen from '../screens/main/TripsScreen';
 import DriverTripsScreen from '../screens/main/DriverTripsScreen';
@@ -55,6 +56,11 @@ function Tabs() {
     >
       <Tab.Screen name="Home" component={DashboardScreen} />
       <Tab.Screen name="Find" component={SearchRidesScreen} options={{ title: 'Find rides' }} />
+      <Tab.Screen
+        name="Map"
+        component={MapScreen}
+        options={{ title: 'Live Map', headerShown: false }}
+      />
       <Tab.Screen name="Trips" component={TripsScreen} />
       <Tab.Screen name="Wallet" component={WalletScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
@@ -82,12 +88,13 @@ export default function RootNavigator() {
 
 function iconFor(name) {
   const icons = {
-    Home: 'home-outline',
-    Find: 'search-outline',
-    Trips: 'ticket-outline',
-    Wallet: 'wallet-outline',
+    Home:    'home-outline',
+    Find:    'search-outline',
+    Map:     'map-outline',
+    Trips:   'ticket-outline',
+    Wallet:  'wallet-outline',
     Profile: 'person-outline',
-    Admin: 'shield-checkmark-outline',
+    Admin:   'shield-checkmark-outline',
   };
   return icons[name] || 'ellipse-outline';
 }

@@ -1,6 +1,8 @@
 import api from './axios';
+import { MOCK_MODE } from './config';
+import { mockAdminApi } from '../mock/mockApi';
 
-export const adminApi = {
+const realAdminApi = {
   stats: () => api.get('/admin/dashboard/stats').then((res) => res.data),
   users: () => api.get('/admin/users').then((res) => res.data),
   updateUser: (userId, payload) => api.put(`/admin/users/${userId}`, payload).then((res) => res.data),
@@ -10,3 +12,5 @@ export const adminApi = {
   trips: () => api.get('/admin/trips').then((res) => res.data),
   analytics: () => api.get('/analytics/dashboard').then((res) => res.data),
 };
+
+export const adminApi = MOCK_MODE ? mockAdminApi : realAdminApi;

@@ -1,6 +1,8 @@
 import api from './axios';
+import { MOCK_MODE } from './config';
+import { mockRideApi } from '../mock/mockApi';
 
-export const rideApi = {
+const realRideApi = {
   search: ({ pickupLocation, destination, departureTime, seats = 1 }) =>
     api.get('/rides/search', {
       params: { pickupLocation, destination, departureTime, seats },
@@ -11,3 +13,5 @@ export const rideApi = {
   update: (id, payload) => api.put(`/rides/${id}`, payload).then((res) => res.data),
   remove: (id) => api.delete(`/rides/${id}`),
 };
+
+export const rideApi = MOCK_MODE ? mockRideApi : realRideApi;
