@@ -1,0 +1,69 @@
+# Dependencies
+**/node_modules/
+**/.pnp/
+**/.pnp.js
+
+# Environment and secrets
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+**/local.properties
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+wget-log*
+
+# Build output and coverage
+**/dist/
+**/build/
+**/coverage/
+**/web-build/
+
+# Expo / React Native
+**/.expo/
+**/.expo-shared/
+
+# Flutter / Dart
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+**/app.*.symbols
+**/app.*.map.json
+
+# Android
+**/.gradle/
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Temporary files
+*.tmp
+*.temp
+*.orig
+*.orig.*

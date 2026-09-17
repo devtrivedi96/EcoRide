@@ -143,13 +143,15 @@ async function cancelTripAsPassenger(tripId, userEmail) {
   return enrichTrip(await findById(COLLECTIONS.TRIPS, tripId));
 }
 
-function mapToDto(trip, ride, passenger, driver) {
+function mapToDto(trip, ride, passenger, driver, viewerEmail = null) {
+  // Only expose OTP to the passenger who booked the trip (they show it to the driver)
+  const showOtp = passenger && viewerEmail === passenger.email;
   return {
     id: trip.id,
     bookedSeats: trip.bookedSeats,
     totalFare: trip.totalFare,
     status: trip.status,
-    startOtp: trip.startOtp,
+    ...(showOtp ? { startOtp: trip.startOtp } : {}),
     passenger: passenger ? {
       id: passenger.id,
       firstName: passenger.firstName,
@@ -172,6 +174,7 @@ function mapToDto(trip, ride, passenger, driver) {
     } : null,
   };
 }
+
 
 module.exports = {
   bookTrip, acceptTrip, rejectTrip, getPassengerTrips, getDriverTrips,

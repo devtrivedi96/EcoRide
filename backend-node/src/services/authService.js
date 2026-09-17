@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const { COLLECTIONS, findOne, create, removeWhere } = require('../models');
 const { generateToken } = require('../config/jwtService');
 const { logEvent } = require('./auditService');
+const logger = require('../config/logger');
 
 async function register({ firstName, lastName, email, password, phoneNumber }) {
   const existing = await findOne(COLLECTIONS.USERS, 'email', email);
@@ -57,7 +58,8 @@ async function generatePasswordResetToken(email) {
   const expiryDate = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   await create(COLLECTIONS.PASSWORD_RESET, { token, userId: user.id, expiryDate });
 
-  console.log(`PASSWORD RESET TOKEN FOR ${email}: ${token}`);
+  logger.warn(`[PASSWORD RESET] Token generated for ${email} (token not logged for security)`);
+
 }
 
 async function resetPassword(token, newPassword) {
