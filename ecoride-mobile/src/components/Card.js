@@ -1,18 +1,29 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import { colors } from '../utils/theme';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { colors, shadows, spacing } from '../utils/theme';
 
-export default function Card({ children, style }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+export default function Card({ children, style, onPress, activeOpacity = 0.82 }) {
+  if (onPress) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={activeOpacity}
+        style={[styles.card, shadows.card, style]}
+      >
+        {children}
+      </TouchableOpacity>
+    );
+  }
+  return <View style={[styles.card, shadows.card, style]}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 8,
+    borderRadius: spacing.radius,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.panel,
-    padding: 16,
+    padding: spacing.page,
     gap: 10,
   },
 });

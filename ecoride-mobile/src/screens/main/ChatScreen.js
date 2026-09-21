@@ -1,15 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { chatApi } from '../../api/chatApi';
 import { createTripSocket } from '../../api/trackingApi';
-import Button from '../../components/Button';
-import Field from '../../components/Field';
 import Screen from '../../components/Screen';
+import Badge from '../../components/Badge';
 import { useAuth } from '../../context/AuthContext';
-import { colors } from '../../utils/theme';
+import { colors, spacing } from '../../utils/theme';
 import { formatDateTime } from '../../utils/format';
 
-export default function ChatScreen({ route }) {
+export default function ChatScreen({ route, navigation }) {
   const { tripId } = route.params || {};
   const { token, user } = useAuth();
   const [messages, setMessages] = useState([]);
@@ -23,7 +32,7 @@ export default function ChatScreen({ route }) {
     async function boot() {
       try {
         const history = await chatApi.history(tripId);
-        setMessages(history);
+        setMessages(history || []);
 
         liveSocket = createTripSocket(token, tripId, (payload) => {
           setMessages((current) => [...current, payload]);
@@ -36,7 +45,7 @@ export default function ChatScreen({ route }) {
         liveSocket.emit('join-trip', tripId);
         socketRef.current = liveSocket;
       } catch {
-        // Chat history unavailable — non-fatal in mock mode
+        // Chat history unavailable
       }
     }
 
@@ -68,79 +77,210 @@ export default function ChatScreen({ route }) {
       });
     }
 
-    // Scroll to bottom
     setTimeout(() => listRef.current?.scrollToEnd?.({ animated: true }), 100);
   }
 
   return (
     <Screen scroll={false} contentStyle={styles.content}>
+      {/* ── Sub-header banner ── */}
+      <View style={styles.chatHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.chatTitle}>Trip Discussion</Text>
+          <Text style={styles.chatSubtitle}>Trip Reference #{tripId || 'N/A'}</Text>
+        </View>
+        <Badge label="Active Session" variant="green" icon="radio-outline" size="sm" />
+      </View>
+
+      {/* ── Message Bubble List ── */}
       <FlatList
         ref={listRef}
         data={messages}
         keyExtractor={(item, index) => item.id || `${index}`}
         contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
         onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
-        renderItem={({ item }) => (
-          <View style={[styles.bubble, item.senderEmail === user?.email && styles.mine]}>
-            <Text style={styles.sender}>{item.senderEmail}</Text>
-            <Text style={styles.text}>{item.content}</Text>
-            <Text style={styles.time}>{formatDateTime(item.timestamp)}</Text>
+        ListEmptyComponent={
+          <View style={styles.emptyWrap}>
+            <Ionicons name="chatbubbles-outline" size={36} color={colors.muted} />
+            <Text style={styles.emptyTitle}>No messages yet</Text>
+            <Text style={styles.emptySub}>
+              Coordinate pickup details, timing, or landmarks with your carpool partner.
+            </Text>
           </View>
-        )}
+        }
+        renderItem={({ item }) => {
+          const isMine = item.senderEmail === user?.email;
+          return (
+            <View style={[styles.bubbleWrap, isMine ? styles.bubbleWrapMine : styles.bubbleWrapTheir]}>
+              {!isMine ? (
+                <Text style={styles.senderEmail}>{item.senderEmail}</Text>
+              ) : null}
+              <View style={[styles.bubble, isMine ? styles.mine : styles.theirs]}>
+                <Text style={[styles.text, isMine && styles.mineText]}>
+                  {item.content}
+                </Text>
+                <Text style={[styles.time, isMine && styles.mineTime]}>
+                  {formatDateTime(item.timestamp)}
+                </Text>
+              </View>
+            </View>
+          );
+        }}
       />
-      <View style={styles.composer}>
-        <Field value={message} onChangeText={setMessage} placeholder="Message" style={styles.input} />
-        <Button title="Send" onPress={send} style={styles.send} />
-      </View>
+
+      {/* ── Message Composer ── */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <View style={styles.composer}>
+          <TextInput
+            value={message}
+            onChangeText={setMessage}
+            placeholder="Type a message..."
+            placeholderTextColor={colors.subtle}
+            style={styles.composerInput}
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, !message.trim() && styles.sendBtnDisabled]}
+            onPress={send}
+            disabled={!message.trim()}
+          >
+            <Ionicons name="send" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
-    paddingBottom: 12,
+    paddingBottom: 10,
+    flex: 1,
   },
-  list: {
-    gap: 10,
-    paddingBottom: 12,
-  },
-  bubble: {
-    maxWidth: '86%',
-    alignSelf: 'flex-start',
-    borderRadius: 8,
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: colors.panel,
+    padding: 12,
+    borderRadius: spacing.radiusSm,
     borderWidth: 1,
     borderColor: colors.line,
-    padding: 12,
+    marginBottom: 8,
+  },
+  chatTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  chatSubtitle: {
+    fontSize: 11,
+    color: colors.muted,
+  },
+  list: {
+    gap: 12,
+    paddingVertical: 10,
+    flexGrow: 1,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  emptySub: {
+    fontSize: 12,
+    color: colors.muted,
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  bubbleWrap: {
+    maxWidth: '82%',
+  },
+  bubbleWrapMine: {
+    alignSelf: 'flex-end',
+  },
+  bubbleWrapTheir: {
+    alignSelf: 'flex-start',
+  },
+  senderEmail: {
+    fontSize: 10,
+    color: colors.muted,
+    fontWeight: '600',
+    marginBottom: 3,
+    marginLeft: 4,
+  },
+  bubble: {
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     gap: 4,
   },
   mine: {
-    alignSelf: 'flex-end',
-    backgroundColor: colors.blue,
-    borderColor: colors.blue,
+    backgroundColor: colors.green,
+    borderBottomRightRadius: 2,
   },
-  sender: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '800',
+  theirs: {
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderBottomLeftRadius: 2,
   },
   text: {
     color: colors.text,
+    fontSize: 14,
     lineHeight: 20,
   },
+  mineText: {
+    color: '#FFFFFF',
+  },
   time: {
-    color: '#CBD5E1',
-    fontSize: 11,
+    color: colors.muted,
+    fontSize: 10,
+    alignSelf: 'flex-end',
+  },
+  mineTime: {
+    color: '#D1FAE5',
   },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 10,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: spacing.radius,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
   },
-  input: {
+  composerInput: {
     flex: 1,
+    minHeight: 38,
+    maxHeight: 100,
+    color: colors.text,
+    fontSize: 14,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
-  send: {
-    width: 84,
+  sendBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendBtnDisabled: {
+    backgroundColor: colors.subtle,
+    opacity: 0.5,
   },
 });

@@ -1,12 +1,20 @@
 import React from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
 import { colors, spacing } from '../utils/theme';
 
-export default function Screen({ children, scroll = true, style, contentStyle, refreshControl }) {
-  const body = scroll ? (
+export default function Screen({
+  children,
+  scroll = true,
+  style,
+  contentStyle,
+  refreshControl,
+  keyboardAvoiding = true,
+}) {
+  const content = scroll ? (
     <ScrollView
       contentContainerStyle={[styles.content, contentStyle]}
       keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
       refreshControl={refreshControl}
     >
       {children}
@@ -15,7 +23,15 @@ export default function Screen({ children, scroll = true, style, contentStyle, r
     <View style={[styles.content, styles.flex, contentStyle]}>{children}</View>
   );
 
-  return <SafeAreaView style={[styles.safe, style]}>{body}</SafeAreaView>;
+  const inner = keyboardAvoiding && Platform.OS === 'ios' ? (
+    <KeyboardAvoidingView behavior="padding" style={styles.flex}>
+      {content}
+    </KeyboardAvoidingView>
+  ) : (
+    content
+  );
+
+  return <SafeAreaView style={[styles.safe, style]}>{inner}</SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
@@ -25,7 +41,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.page,
-    gap: 16,
+    gap: 14,
   },
   flex: {
     flex: 1,

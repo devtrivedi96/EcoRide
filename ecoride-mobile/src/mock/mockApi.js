@@ -54,13 +54,17 @@ export const mockUserApi = {
 export const mockRideApi = {
   search: async ({ pickupLocation, destination }) => {
     await delay();
-    // Simple substring match (case-insensitive)
     const q = (s) => s?.toLowerCase?.() || '';
-    return MOCK_RIDES.filter(
+    const filtered = MOCK_RIDES.filter(
       (r) =>
+        !pickupLocation ||
+        !destination ||
         q(r.pickupLocation).includes(q(pickupLocation)) ||
-        q(r.destination).includes(q(destination)),
+        q(r.destination).includes(q(destination)) ||
+        q(pickupLocation).includes(q(r.pickupLocation)) ||
+        q(destination).includes(q(r.destination))
     );
+    return filtered.length ? filtered : MOCK_RIDES;
   },
   locations: async () => {
     await delay(200);

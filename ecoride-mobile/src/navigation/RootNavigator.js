@@ -5,9 +5,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../utils/theme';
+
+// Auth Screens
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+
+// Main Screens
 import DashboardScreen from '../screens/main/DashboardScreen';
 import SearchRidesScreen from '../screens/main/SearchRidesScreen';
 import MapScreen from '../screens/main/MapScreen';
@@ -19,6 +23,12 @@ import ProfileScreen from '../screens/main/ProfileScreen';
 import ChatScreen from '../screens/main/ChatScreen';
 import AdminScreen from '../screens/main/AdminScreen';
 
+// New Flow Screens
+import RideDetailsScreen from '../screens/main/RideDetailsScreen';
+import BookingSuccessScreen from '../screens/main/BookingSuccessScreen';
+import SustainabilityScreen from '../screens/main/SustainabilityScreen';
+import VehiclesScreen from '../screens/main/VehiclesScreen';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -26,7 +36,7 @@ function Loading() {
   return (
     <View style={styles.loading}>
       <ActivityIndicator size="large" color={colors.green} />
-      <Text style={styles.loadingText}>Loading EcoRide</Text>
+      <Text style={styles.loadingText}>Connecting to EcoRide</Text>
     </View>
   );
 }
@@ -34,9 +44,21 @@ function Loading() {
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
-      <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Register" component={RegisterScreen} options={{ title: 'Create account' }} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: 'Password help' }} />
+      <Stack.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Register"
+        component={RegisterScreen}
+        options={{ title: 'Create Account' }}
+      />
+      <Stack.Screen
+        name="ForgotPassword"
+        component={ForgotPasswordScreen}
+        options={{ title: 'Reset Password' }}
+      />
     </Stack.Navigator>
   );
 }
@@ -46,25 +68,79 @@ function Tabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerStyle: { backgroundColor: colors.ink },
+        headerStyle: {
+          backgroundColor: '#FFFFFF',
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.line,
+        },
         headerTintColor: colors.text,
-        tabBarStyle: { backgroundColor: colors.panel, borderTopColor: colors.line },
+        headerTitleStyle: {
+          fontWeight: '800',
+          fontSize: 17,
+          color: colors.text,
+        },
+        tabBarStyle: {
+          backgroundColor: '#FFFFFF',
+          borderTopColor: colors.line,
+          borderTopWidth: 1,
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
         tabBarActiveTintColor: colors.green,
         tabBarInactiveTintColor: colors.muted,
-        tabBarIcon: ({ color, size }) => <Ionicons name={iconFor(route.name)} color={color} size={size} />,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+        },
+        tabBarIcon: ({ color, focused }) => (
+          <Ionicons
+            name={iconFor(route.name, focused)}
+            color={color}
+            size={22}
+          />
+        ),
       })}
     >
-      <Tab.Screen name="Home" component={DashboardScreen} />
-      <Tab.Screen name="Find" component={SearchRidesScreen} options={{ title: 'Find rides' }} />
+      <Tab.Screen
+        name="Home"
+        component={DashboardScreen}
+        options={{ title: 'EcoRide' }}
+      />
+      <Tab.Screen
+        name="Find"
+        component={SearchRidesScreen}
+        options={{ title: 'Find Rides' }}
+      />
       <Tab.Screen
         name="Map"
         component={MapScreen}
         options={{ title: 'Live Map', headerShown: false }}
       />
-      <Tab.Screen name="Trips" component={TripsScreen} />
-      <Tab.Screen name="Wallet" component={WalletScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-      {user?.role === 'ADMIN' ? <Tab.Screen name="Admin" component={AdminScreen} /> : null}
+      <Tab.Screen
+        name="Trips"
+        component={TripsScreen}
+        options={{ title: 'My Rides' }}
+      />
+      <Tab.Screen
+        name="Wallet"
+        component={WalletScreen}
+        options={{ title: 'Wallet' }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{ title: 'Profile' }}
+      />
+      {user?.role === 'ADMIN' ? (
+        <Tab.Screen
+          name="Admin"
+          component={AdminScreen}
+          options={{ title: 'Admin' }}
+        />
+      ) : null}
     </Tab.Navigator>
   );
 }
@@ -72,10 +148,46 @@ function Tabs() {
 function AppStack() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
-      <Stack.Screen name="MainTabs" component={Tabs} options={{ headerShown: false }} />
-      <Stack.Screen name="PublishRide" component={PublishRideScreen} options={{ title: 'Publish ride' }} />
-      <Stack.Screen name="DriverTrips" component={DriverTripsScreen} options={{ title: 'Driver trips' }} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Trip chat' }} />
+      <Stack.Screen
+        name="MainTabs"
+        component={Tabs}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="RideDetails"
+        component={RideDetailsScreen}
+        options={{ title: 'Ride Details' }}
+      />
+      <Stack.Screen
+        name="BookingSuccess"
+        component={BookingSuccessScreen}
+        options={{ title: 'Booking Confirmed', headerBackVisible: false }}
+      />
+      <Stack.Screen
+        name="PublishRide"
+        component={PublishRideScreen}
+        options={{ title: 'Offer a Ride' }}
+      />
+      <Stack.Screen
+        name="DriverTrips"
+        component={DriverTripsScreen}
+        options={{ title: 'Driver Requests' }}
+      />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ title: 'Trip Discussion' }}
+      />
+      <Stack.Screen
+        name="Sustainability"
+        component={SustainabilityScreen}
+        options={{ title: 'Eco Impact' }}
+      />
+      <Stack.Screen
+        name="Vehicles"
+        component={VehiclesScreen}
+        options={{ title: 'My Vehicles' }}
+      />
     </Stack.Navigator>
   );
 }
@@ -86,24 +198,34 @@ export default function RootNavigator() {
   return isAuthenticated ? <AppStack /> : <AuthStack />;
 }
 
-function iconFor(name) {
+function iconFor(name, focused) {
   const icons = {
-    Home:    'home-outline',
-    Find:    'search-outline',
-    Map:     'map-outline',
-    Trips:   'ticket-outline',
-    Wallet:  'wallet-outline',
-    Profile: 'person-outline',
-    Admin:   'shield-checkmark-outline',
+    Home: focused ? 'home' : 'home-outline',
+    Find: focused ? 'search' : 'search-outline',
+    Map: focused ? 'map' : 'map-outline',
+    Trips: focused ? 'ticket' : 'ticket-outline',
+    Wallet: focused ? 'wallet' : 'wallet-outline',
+    Profile: focused ? 'person' : 'person-outline',
+    Admin: focused ? 'shield-checkmark' : 'shield-checkmark-outline',
   };
   return icons[name] || 'ellipse-outline';
 }
 
 const screenOptions = {
-  headerStyle: { backgroundColor: colors.ink },
+  headerStyle: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
   headerTintColor: colors.text,
-  headerTitleStyle: { fontWeight: '900' },
-  contentStyle: { backgroundColor: colors.ink },
+  headerTitleStyle: {
+    fontWeight: '800',
+    fontSize: 17,
+    color: colors.text,
+  },
+  contentStyle: {
+    backgroundColor: colors.ink,
+  },
 };
 
 const styles = StyleSheet.create({
@@ -117,5 +239,6 @@ const styles = StyleSheet.create({
   loadingText: {
     color: colors.muted,
     fontWeight: '700',
+    fontSize: 14,
   },
 });

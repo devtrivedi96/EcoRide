@@ -1,13 +1,21 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { adminApi } from '../../api/adminApi';
+import Badge from '../../components/Badge';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import EmptyState from '../../components/EmptyState';
 import Screen from '../../components/Screen';
 import Stat from '../../components/Stat';
-import { colors } from '../../utils/theme';
+import { colors, spacing } from '../../utils/theme';
 import { getErrorMessage } from '../../utils/format';
 
 export default function AdminScreen() {
@@ -25,8 +33,8 @@ export default function AdminScreen() {
         adminApi.vehicles(),
       ]);
       setStats(statsData);
-      setUsers(usersData);
-      setVehicles(vehiclesData);
+      setUsers(usersData || []);
+      setVehicles(vehiclesData || []);
     } catch (error) {
       Alert.alert('Admin data unavailable', getErrorMessage(error));
     } finally {
@@ -34,7 +42,11 @@ export default function AdminScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   async function setRole(userId, role) {
     try {
@@ -46,36 +58,128 @@ export default function AdminScreen() {
   }
 
   return (
-    <Screen refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />} contentStyle={{ paddingBottom: 90 }}>
+    <Screen
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}
+      contentStyle={{ paddingBottom: 90, gap: 16 }}
+    >
+      {/* ── Admin Overview Metrics ── */}
       <View style={styles.grid}>
-        <Stat label="Users" value={stats?.totalUsers ?? '-'} />
-        <Stat label="Drivers" value={stats?.totalDrivers ?? '-'} />
+        <Stat
+          label="Total Users"
+          value={stats?.totalUsers ?? '-'}
+          icon="people-outline"
+          color={colors.blue}
+        />
+        <Stat
+          label="Drivers"
+          value={stats?.totalDrivers ?? '-'}
+          icon="car-sport-outline"
+          color={colors.green}
+        />
       </View>
       <View style={styles.grid}>
-        <Stat label="Vehicles" value={stats?.totalVehicles ?? '-'} />
-        <Stat label="Trips" value={stats?.totalTrips ?? '-'} />
+        <Stat
+          label="Vehicles"
+          value={stats?.totalVehicles ?? '-'}
+          icon="shield-checkmark-outline"
+          color={colors.purple}
+        />
+        <Stat
+          label="Total Trips"
+          value={stats?.totalTrips ?? '-'}
+          icon="ticket-outline"
+          color={colors.amber}
+        />
       </View>
-      <Text style={styles.section}>Users</Text>
-      {users.length ? users.map((user) => (
-        <Card key={user.id}>
-          <Text style={styles.title}>{user.firstName} {user.lastName}</Text>
-          <Text style={styles.meta}>{user.email} · {user.companyName || 'No company'}</Text>
-          <Text style={styles.role}>{user.role}</Text>
-          <View style={styles.actions}>
-            <Button title="Employee" variant="ghost" onPress={() => setRole(user.id, 'EMPLOYEE')} style={styles.action} />
-            <Button title="Admin" variant="ghost" onPress={() => setRole(user.id, 'ADMIN')} style={styles.action} />
-          </View>
-        </Card>
-      )) : <EmptyState title="No users found" />}
-      <Text style={styles.section}>Vehicles</Text>
-      {vehicles.length ? vehicles.map((vehicle) => (
-        <Card key={vehicle.id}>
-          <Text style={styles.title}>{vehicle.model || 'Vehicle'}</Text>
-          <Text style={styles.meta}>ID: {vehicle.id}</Text>
-          <Text style={styles.meta}>Owner: {vehicle.userId}</Text>
-          <Text style={styles.meta}>{vehicle.registrationNumber} · {vehicle.seatingCapacity} seats</Text>
-        </Card>
-      )) : <EmptyState title="No vehicles found" />}
+
+      {/* ── User Management Section ── */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.section}>Employee Directory ({users.length})</Text>
+        <Badge label="Role Management" variant="blue" size="sm" />
+      </View>
+
+      {users.length ? (
+        users.map((u) => (
+          <Card key={u.id} style={styles.userCard}>
+            <View style={styles.userHeader}>
+              <View style={styles.userAvatar}>
+                <Text style={styles.userAvatarText}>
+                  {u.firstName?.[0] || 'U'}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.userName}>
+                  {u.firstName} {u.lastName}
+                </Text>
+                <Text style={styles.userEmail}>{u.email}</Text>
+                <Text style={styles.userCompany}>{u.companyName || 'Corporate Partner'}</Text>
+              </View>
+              <Badge
+                label={u.role}
+                variant={u.role === 'ADMIN' ? 'purple' : u.role === 'DRIVER' ? 'green' : 'neutral'}
+                size="sm"
+              />
+            </View>
+
+            <View style={styles.userActions}>
+              <Button
+                title="Set Employee"
+                variant={u.role === 'EMPLOYEE' ? 'primary' : 'ghost'}
+                size="sm"
+                onPress={() => setRole(u.id, 'EMPLOYEE')}
+                style={styles.actionBtn}
+              />
+              <Button
+                title="Set Driver"
+                variant={u.role === 'DRIVER' ? 'primary' : 'ghost'}
+                size="sm"
+                onPress={() => setRole(u.id, 'DRIVER')}
+                style={styles.actionBtn}
+              />
+              <Button
+                title="Set Admin"
+                variant={u.role === 'ADMIN' ? 'primary' : 'ghost'}
+                size="sm"
+                onPress={() => setRole(u.id, 'ADMIN')}
+                style={styles.actionBtn}
+              />
+            </View>
+          </Card>
+        ))
+      ) : (
+        <EmptyState title="No users found" />
+      )}
+
+      {/* ── Registered Corporate Vehicles ── */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.section}>Registered Fleet ({vehicles.length})</Text>
+        <Badge label="Vehicle Inspection" variant="green" size="sm" />
+      </View>
+
+      {vehicles.length ? (
+        vehicles.map((v) => (
+          <Card key={v.id} style={styles.vehicleCard}>
+            <View style={styles.vehicleHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.vehicleTitle}>{v.model || 'Vehicle'}</Text>
+                <Text style={styles.vehicleReg}>{v.registrationNumber}</Text>
+              </View>
+              <Badge
+                label={v.vehicleType || 'ELECTRIC'}
+                variant={v.vehicleType === 'ELECTRIC' ? 'green' : 'neutral'}
+                size="sm"
+              />
+            </View>
+            <View style={styles.vehicleMetaRow}>
+              <Text style={styles.vehicleMeta}>ID: {v.id}</Text>
+              <Text style={styles.vehicleMeta}>Owner: {v.userId}</Text>
+              <Text style={styles.vehicleMeta}>{v.seatingCapacity} seats</Text>
+            </View>
+          </Card>
+        ))
+      ) : (
+        <EmptyState title="No vehicles found" />
+      )}
     </Screen>
   );
 }
@@ -85,28 +189,91 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
   section: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  title: {
-    color: colors.text,
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '800',
+    color: colors.text,
   },
-  meta: {
+  userCard: {
+    padding: 14,
+    gap: 12,
+  },
+  userHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  userAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.panelSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userAvatarText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.textSecondary,
+  },
+  userName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  userEmail: {
+    fontSize: 12,
     color: colors.muted,
   },
-  role: {
+  userCompany: {
+    fontSize: 11,
     color: colors.green,
-    fontWeight: '900',
+    fontWeight: '600',
   },
-  actions: {
+  userActions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
   },
-  action: {
+  actionBtn: {
     flex: 1,
+  },
+  vehicleCard: {
+    padding: 14,
+    gap: 8,
+  },
+  vehicleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  vehicleTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  vehicleReg: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  vehicleMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  vehicleMeta: {
+    fontSize: 11,
+    color: colors.muted,
   },
 });
