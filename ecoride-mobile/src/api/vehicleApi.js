@@ -130,26 +130,7 @@ const realVehicleApi = {
       }
     }
 
-    // 2. Resolve user's authentic database vehicle
-    let dbVehicle = null;
-    try {
-      const userRaw = await AsyncStorage.getItem(STORAGE_KEYS.user);
-      if (userRaw) {
-        const currentUser = JSON.parse(userRaw);
-        dbVehicle = KNOWN_DB_VEHICLES[currentUser?.email] || KNOWN_DB_VEHICLES.default;
-        if (dbVehicle) {
-          dbVehicle = { ...dbVehicle, userId: currentUser.id };
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    if (!dbVehicle) {
-      dbVehicle = KNOWN_DB_VEHICLES.default;
-    }
-
-    // 3. Load locally cached vehicles
+    // 2. Load locally cached vehicles
     let localVehicles = [];
     try {
       const cached = await AsyncStorage.getItem(VEHICLES_CACHE_KEY);
@@ -163,45 +144,68 @@ const realVehicleApi = {
       // ignore
     }
 
-    // Ensure the vehicles list has valid database IDs for publishing
-    const result = [];
-    if (localVehicles.length > 0) {
-      // Ensure the first vehicle uses the genuine database vehicle ID
-      localVehicles.forEach((v, index) => {
-        if (index === 0 && dbVehicle) {
-          result.push({
-            ...v,
-            id: dbVehicle.id, // Guarantee valid Firestore ID
-          });
-        } else {
-          result.push(v);
-        }
-      });
-    }
-
-    // If dbVehicle is not already represented, include it
-    if (!result.some((v) => v.id === dbVehicle.id)) {
-      result.unshift(dbVehicle);
-    }
-
-    await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(result));
-    return result;
-  },
-
-  registerVehicle: async (payload) => {
-    // Determine the verified database ID for this user
-    let verifiedDbId = null;
+    // 3. Resolve user details
+    let currentUser = null;
     try {
       const userRaw = await AsyncStorage.getItem(STORAGE_KEYS.user);
       if (userRaw) {
-        const currentUser = JSON.parse(userRaw);
-        const match = KNOWN_DB_VEHICLES[currentUser?.email] || KNOWN_DB_VEHICLES.default;
-        verifiedDbId = match?.id;
+        currentUser = JSON.parse(userRaw);
       }
     } catch {
       // ignore
     }
 
+    const matchedDbVehicle = currentUser?.email ? KNOWN_DB_VEHICLES[currentUser.email] : null;
+
+    // 4. Clean and de-duplicate list (never produce duplicate IDs or duplicate registration numbers)
+    const seenRegs = new Set();
+    const seenIds = new Set();
+    const uniqueVehicles = [];
+
+    for (const v of localVehicles) {
+      if (!v || !v.registrationNumber) continue;
+      const reg = v.registrationNumber.trim().toUpperCase();
+      if (seenRegs.has(reg)) continue;
+      seenRegs.add(reg);
+
+      // Ensure every vehicle has a unique ID
+      let id = v.id;
+      if (!id || seenIds.has(id)) {
+        id = `veh-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+      }
+      seenIds.add(id);
+
+      uniqueVehicles.push({
+        ...v,
+        id,
+      });
+    }
+
+    // If user has a verified database vehicle (e.g. Alice or Admin) and it's not yet in the list, add it
+    if (matchedDbVehicle && !seenRegs.has(matchedDbVehicle.registrationNumber)) {
+      uniqueVehicles.unshift({
+        ...matchedDbVehicle,
+        userId: currentUser?.id,
+      });
+    }
+
+    // If list is completely empty, provide an initial vehicle with a guaranteed unique ID
+    if (uniqueVehicles.length === 0) {
+      const initialId = matchedDbVehicle?.id || `veh-${Date.now().toString(36)}`;
+      uniqueVehicles.push({
+        id: initialId,
+        model: matchedDbVehicle?.model || 'Tesla Model 3',
+        registrationNumber: matchedDbVehicle?.registrationNumber || 'KA-01-AB-1234',
+        seatingCapacity: matchedDbVehicle?.seatingCapacity || 4,
+        vehicleType: matchedDbVehicle?.vehicleType || 'ELECTRIC',
+      });
+    }
+
+    await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(uniqueVehicles));
+    return uniqueVehicles;
+  },
+
+  registerVehicle: async (payload) => {
     const body = {
       model: payload.model?.trim(),
       registrationNumber: (payload.registrationNumber || payload.regNo)?.trim().toUpperCase(),
@@ -226,10 +230,10 @@ const realVehicleApi = {
       }
     }
 
-    // If server returned 404, create vehicle using the verified Firestore ID
+    // Always generate a unique ID for new vehicles
     if (!createdVehicle) {
       createdVehicle = {
-        id: verifiedDbId || `veh-${Date.now().toString(36)}`,
+        id: `veh-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
         model: body.model,
         registrationNumber: body.registrationNumber,
         seatingCapacity: body.seatingCapacity,
@@ -238,13 +242,13 @@ const realVehicleApi = {
       };
     }
 
-    // Update local cache
+    // Update local cache without duplicates
     try {
       const cached = await AsyncStorage.getItem(VEHICLES_CACHE_KEY);
       const list = cached ? JSON.parse(cached) : [];
       const updatedList = [
         createdVehicle,
-        ...list.filter((v) => v.registrationNumber !== createdVehicle.registrationNumber),
+        ...list.filter((v) => v && v.id !== createdVehicle.id && v.registrationNumber !== createdVehicle.registrationNumber),
       ];
       await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(updatedList));
     } catch {

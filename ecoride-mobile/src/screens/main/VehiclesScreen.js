@@ -147,8 +147,8 @@ export default function VehiclesScreen({ navigation }) {
           <Text style={styles.loadingText}>Fetching vehicles from database...</Text>
         </View>
       ) : vehicles.length ? (
-        vehicles.map((v) => (
-          <Card key={v.id} style={styles.vehicleCard}>
+        vehicles.map((v, index) => (
+          <Card key={`${v.id || 'veh'}-${index}`} style={styles.vehicleCard}>
             <View style={styles.cardHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modelName}>{v.model}</Text>

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../api/bookingApi';
+import { useAuth } from '../../context/AuthContext';
 import Badge from '../../components/Badge';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -17,7 +18,13 @@ import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage } from '../../utils/format';
 
 export default function RideDetailsScreen({ route, navigation }) {
+  const { user } = useAuth();
   const { ride, searchSeats = 1 } = route.params || {};
+
+  const isMyRide =
+    (user && (user.id === ride?.driverId || user.email === ride?.driver?.email)) ||
+    ride?.driverId === 'me' ||
+    ride?.isLocal === true;
 
   const [selectedSeats, setSelectedSeats] = useState(
     Math.min(Number(searchSeats) || 1, ride?.availableSeats || 1)
@@ -55,6 +62,10 @@ export default function RideDetailsScreen({ route, navigation }) {
   const co2SavedKg = (1.4 * (selectedSeats || 1) * 3.2).toFixed(1);
 
   async function handleBookRide() {
+    if (isMyRide) {
+      Alert.alert('Notice', 'You are the driver of this ride. You cannot book your own ride, but you can manage it from Driver Trips.');
+      return;
+    }
     if (selectedSeats > (ride.availableSeats || 1)) {
       Alert.alert('Seats Unavailable', 'Please reduce the number of requested seats.');
       return;
@@ -273,13 +284,22 @@ export default function RideDetailsScreen({ route, navigation }) {
           <Text style={styles.totalFareAmount}>{currency(totalFare)}</Text>
         </View>
 
-        <Button
-          title={`Confirm Booking (${currency(totalFare)})`}
-          icon="ticket-outline"
-          loading={loading}
-          size="lg"
-          onPress={handleBookRide}
-        />
+        {isMyRide ? (
+          <Button
+            title="Manage in Driver Trips"
+            icon="people-outline"
+            size="lg"
+            onPress={() => navigation.navigate('DriverTrips')}
+          />
+        ) : (
+          <Button
+            title={`Confirm Booking (${currency(totalFare)})`}
+            icon="ticket-outline"
+            loading={loading}
+            size="lg"
+            onPress={handleBookRide}
+          />
+        )}
       </Card>
 
       {/* ── Secondary Actions ── */}

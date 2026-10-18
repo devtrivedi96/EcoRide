@@ -465,11 +465,11 @@ export default function PublishRideScreen({ route, navigation }) {
                 <Text style={styles.loadingVehiclesText}>Loading registered vehicles...</Text>
               </View>
             ) : userVehicles.length > 0 ? (
-              userVehicles.map((v) => {
+              userVehicles.map((v, index) => {
                 const isSelected = form.vehicleId === v.id;
                 return (
                   <TouchableOpacity
-                    key={v.id}
+                    key={`${v.id || 'veh'}-${index}`}
                     style={[styles.vehicleSelectCard, isSelected && styles.vehicleSelectCardActive]}
                     onPress={() => {
                       setValue('vehicleId', v.id);
