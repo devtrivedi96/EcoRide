@@ -196,7 +196,16 @@ export default function SearchRidesScreen({ navigation }) {
           <Text style={styles.resultsTitle}>
             Available Carpool ({rides.length})
           </Text>
-          <Badge label="AI Ranked" variant="green" icon="sparkles-outline" size="sm" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={styles.mapToggleBtn}
+              onPress={() => navigation.navigate('Map')}
+            >
+              <Ionicons name="map-outline" size={14} color={colors.blue} />
+              <Text style={styles.mapToggleText}>View Map</Text>
+            </TouchableOpacity>
+            <Badge label="AI Ranked" variant="green" icon="sparkles-outline" size="sm" />
+          </View>
         </View>
       )}
 
@@ -342,5 +351,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: colors.text,
+  },
+  mapToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.blueLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    borderColor: colors.blueBorder,
+  },
+  mapToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.blue,
   },
 });

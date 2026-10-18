@@ -55,7 +55,31 @@ async function bookTrip(userEmail, body) {
   });
 
   const trip = await findById(COLLECTIONS.TRIPS, tripId);
-  return enrichTrip(trip);
+  const enriched = await enrichTrip(trip);
+
+  try {
+    const { getIo } = require('../config/socket');
+    const io = getIo();
+    const alertData = {
+      tripId: trip.id,
+      rideId: trip.rideId,
+      driverId: enriched.driver?.id,
+      passengerName: `${passenger.firstName || ''} ${passenger.lastName || ''}`.trim() || passenger.email,
+      pickup: enriched.ride?.pickupLocation || 'Pickup Point',
+      destination: enriched.ride?.destination || 'Destination',
+      seats: trip.bookedSeats,
+      fare: trip.totalFare,
+    };
+    if (enriched.driver?.id) {
+      io.to(`driver-${enriched.driver.id}`).emit('incoming-ride-request', alertData);
+      io.to(`user-${enriched.driver.id}`).emit('incoming-ride-request', alertData);
+    }
+    io.emit('incoming-ride-request', alertData);
+  } catch (err) {
+    // Non-fatal if socket not ready
+  }
+
+  return enriched;
 }
 
 async function acceptTrip(tripId, driverEmail) {
@@ -66,7 +90,20 @@ async function acceptTrip(tripId, driverEmail) {
   if (driver.email !== driverEmail) throw new Error('Only the driver can accept the trip');
   if (trip.status !== 'PENDING') throw new Error('Can only accept PENDING trips');
   await update(COLLECTIONS.TRIPS, tripId, { status: 'ACCEPTED' });
-  return enrichTrip(await findById(COLLECTIONS.TRIPS, tripId));
+  const updatedTrip = await enrichTrip(await findById(COLLECTIONS.TRIPS, tripId));
+
+  try {
+    const { getIo } = require('../config/socket');
+    const io = getIo();
+    io.to(`user-${updatedTrip.passenger?.id}`).emit('trip-updated', {
+      tripId,
+      status: 'ACCEPTED',
+      driverName: `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || driver.email,
+    });
+    io.emit('trip-updated', { tripId, status: 'ACCEPTED' });
+  } catch (err) {}
+
+  return updatedTrip;
 }
 
 async function rejectTrip(tripId, driverEmail) {
@@ -80,7 +117,19 @@ async function rejectTrip(tripId, driverEmail) {
   // Restore seats
   await update(COLLECTIONS.RIDES, trip.rideId, { availableSeats: ride.availableSeats + trip.bookedSeats });
   await update(COLLECTIONS.TRIPS, tripId, { status: 'REJECTED' });
-  return enrichTrip(await findById(COLLECTIONS.TRIPS, tripId));
+  const updatedTrip = await enrichTrip(await findById(COLLECTIONS.TRIPS, tripId));
+
+  try {
+    const { getIo } = require('../config/socket');
+    const io = getIo();
+    io.to(`user-${updatedTrip.passenger?.id}`).emit('trip-updated', {
+      tripId,
+      status: 'REJECTED',
+    });
+    io.emit('trip-updated', { tripId, status: 'REJECTED' });
+  } catch (err) {}
+
+  return updatedTrip;
 }
 
 async function getPassengerTrips(userEmail) {

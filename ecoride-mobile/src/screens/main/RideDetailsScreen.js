@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../api/bookingApi';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import Badge from '../../components/Badge';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -19,6 +20,7 @@ import { currency, formatDateTime, getErrorMessage } from '../../utils/format';
 
 export default function RideDetailsScreen({ route, navigation }) {
   const { user } = useAuth();
+  const { notifyRideBooked } = useNotification();
   const { ride, searchSeats = 1 } = route.params || {};
 
   const isMyRide =
@@ -76,6 +78,21 @@ export default function RideDetailsScreen({ route, navigation }) {
       const trip = await bookingApi.book({
         rideId: ride.id,
         bookedSeats: Number(selectedSeats),
+      });
+
+      // Broadcast real-time booking alert to driver's device
+      notifyRideBooked({
+        driverId: ride.driverId,
+        driverEmail: ride.driver?.email,
+        passengerName: user
+          ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email
+          : 'Passenger Colleague',
+        pickup: ride.pickupLocation,
+        destination: ride.destination,
+        seats: Number(selectedSeats),
+        fare: totalFare,
+        tripId: trip?.id,
+        rideId: ride.id,
       });
 
       // Navigate to Booking Confirmation Screen

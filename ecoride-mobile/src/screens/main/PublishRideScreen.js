@@ -17,6 +17,8 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Field from '../../components/Field';
 import Screen from '../../components/Screen';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage } from '../../utils/format';
 import { getCurrentUserAddress } from '../../utils/location';
@@ -30,6 +32,8 @@ const STEPS = [
 ];
 
 export default function PublishRideScreen({ route, navigation }) {
+  const { user } = useAuth();
+  const { notifyRidePublished } = useNotification();
   const defaultVehicleId = route.params?.vehicleId || '';
 
   const [currentStep, setCurrentStep] = useState(1);
@@ -183,6 +187,19 @@ export default function PublishRideScreen({ route, navigation }) {
 
       const result = await rideApi.publish(payload);
       setPublishedRide(result || payload);
+
+      // Broadcast real-time route match to commuters along this route
+      notifyRidePublished({
+        driverId: user?.id,
+        driverName: user
+          ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email
+          : 'Colleague Driver',
+        pickup: form.pickupLocation.trim(),
+        destination: form.destination.trim(),
+        fare: Number(form.farePerSeat),
+        departureTime: formatDateTime(form.departureTime),
+        rideId: result?.id,
+      });
     } catch (error) {
       Alert.alert('Could not publish ride', getErrorMessage(error));
     } finally {

@@ -20,12 +20,14 @@ import Screen from '../../components/Screen';
 import Stat from '../../components/Stat';
 import { SkeletonDashboard } from '../../components/Skeleton';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage, initials } from '../../utils/format';
 import { MOCK_RIDES } from '../../mock/mockData';
 
 export default function DashboardScreen({ navigation }) {
   const { user } = useAuth();
+  const { simulateDriverAlert, simulateRouteMatch } = useNotification();
   const [rides, setRides] = useState([]);
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,12 +88,20 @@ export default function DashboardScreen({ navigation }) {
             <Text style={styles.company}>{user?.companyName || user?.email}</Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={styles.notifBtn}
-          onPress={() => navigation.navigate('Profile')}
-        >
-          <Ionicons name="person-circle-outline" size={28} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={() => navigation.navigate('Wallet')}
+          >
+            <Ionicons name="wallet-outline" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <Ionicons name="person-circle-outline" size={28} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── 2. ACTIVE / UPCOMING RIDE SPOTLIGHT ─────────────────────────────── */}
@@ -249,6 +259,39 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={18} color={colors.muted} />
         </View>
       </TouchableOpacity>
+
+      {/* ── LIVE ECORIDE DISPATCH & REAL-TIME ALERTS ── */}
+      <Card style={styles.alertHubCard}>
+        <View style={styles.alertHubHeader}>
+          <View style={styles.alertLiveBadge}>
+            <View style={styles.alertLiveDot} />
+            <Text style={styles.alertLiveBadgeText}>LIVE COMMUTE RADAR</Text>
+          </View>
+          <Text style={styles.alertLiveSub}>Connected · Real-time</Text>
+        </View>
+
+        <Text style={styles.alertHubDesc}>
+          EcoRide live dispatch is active. Drivers receive instant high-priority alerts with sound and vibration when colleagues book a ride, and commuters are notified when colleagues offer rides along their corridor.
+        </Text>
+
+        <View style={styles.alertHubBtnRow}>
+          <Button
+            title="Driver Alert Preview"
+            icon="car-sport-outline"
+            variant="outline"
+            size="sm"
+            style={{ flex: 1 }}
+            onPress={simulateDriverAlert}
+          />
+          <Button
+            title="Route Match Preview"
+            icon="git-compare-outline"
+            size="sm"
+            style={{ flex: 1 }}
+            onPress={simulateRouteMatch}
+          />
+        </View>
+      </Card>
 
       {/* ── 7. RECOMMENDED / AVAILABLE RIDES ───────────────────────────────── */}
       <View style={styles.sectionHeaderRow}>
@@ -539,5 +582,53 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.green,
     fontWeight: '700',
+  },
+  alertHubCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    gap: 10,
+    marginTop: 4,
+  },
+  alertHubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  alertLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: spacing.radiusFull,
+  },
+  alertLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#2563EB',
+  },
+  alertLiveBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#2563EB',
+    letterSpacing: 0.5,
+  },
+  alertLiveSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  alertHubDesc: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
+  },
+  alertHubBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 2,
   },
 });

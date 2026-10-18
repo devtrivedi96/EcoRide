@@ -10,7 +10,9 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../api/bookingApi';
+import { useNotification } from '../../context/NotificationContext';
 import Badge from '../../components/Badge';
+import Button from '../../components/Button';
 import Card from '../../components/Card';
 import EmptyState from '../../components/EmptyState';
 import Field from '../../components/Field';
@@ -20,6 +22,7 @@ import { colors, spacing } from '../../utils/theme';
 import { getErrorMessage } from '../../utils/format';
 
 export default function DriverTripsScreen({ navigation }) {
+  const { simulateDriverAlert } = useNotification();
   const [trips, setTrips] = useState([]);
   const [otps, setOtps] = useState({});
   const [refreshing, setRefreshing] = useState(false);
@@ -69,6 +72,26 @@ export default function DriverTripsScreen({ navigation }) {
             </Text>
           </View>
         </View>
+      </Card>
+
+      {/* ── EcoRide Driver Live Dispatch Card ── */}
+      <Card style={styles.dispatchLiveCard}>
+        <View style={styles.dispatchHeader}>
+          <View style={styles.dispatchBadge}>
+            <View style={styles.dispatchDot} />
+            <Text style={styles.dispatchBadgeText}>LIVE DISPATCH ACTIVE</Text>
+          </View>
+          <Text style={styles.dispatchSub}>In-App & OS Notification Tray</Text>
+        </View>
+        <Text style={styles.dispatchDesc}>
+          EcoRide is listening for incoming booking requests in real time. When a colleague books a seat along your route, you get an instant high-priority alert with sound & vibration whether you are inside or outside the app.
+        </Text>
+        <Button
+          title="Preview Alert & Vibration"
+          icon="notifications-outline"
+          size="sm"
+          onPress={simulateDriverAlert}
+        />
       </Card>
 
       {/* ── Requests List ── */}
@@ -218,5 +241,47 @@ const styles = StyleSheet.create({
   otpSub: {
     fontSize: 12,
     color: colors.amberText,
+  },
+  dispatchLiveCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.greenBorder || '#A7F3D0',
+    gap: 10,
+  },
+  dispatchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dispatchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.greenLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: spacing.radiusFull,
+  },
+  dispatchDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.green,
+  },
+  dispatchBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.greenText,
+    letterSpacing: 0.5,
+  },
+  dispatchSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  dispatchDesc: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
   },
 });

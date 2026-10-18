@@ -92,8 +92,24 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </Card>
 
-      {/* ── Quick Corporate Links ── */}
+      {/* ── Corporate Hub & Services ── */}
       <View style={styles.linksCard}>
+        <TouchableOpacity
+          style={styles.linkRow}
+          onPress={() => navigation.navigate('Wallet')}
+        >
+          <View style={[styles.linkIconWrap, { backgroundColor: colors.amberLight }]}>
+            <Ionicons name="wallet-outline" size={20} color={colors.amber} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>EcoRide Wallet & Payments</Text>
+            <Text style={styles.linkSub}>Add funds, view balance & corporate fare subsidy</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </TouchableOpacity>
+
+        <View style={styles.linkDivider} />
+
         <TouchableOpacity
           style={styles.linkRow}
           onPress={() => navigation.navigate('Vehicles')}
@@ -123,6 +139,42 @@ export default function ProfileScreen({ navigation }) {
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.muted} />
         </TouchableOpacity>
+
+        <View style={styles.linkDivider} />
+
+        <TouchableOpacity
+          style={styles.linkRow}
+          onPress={() => navigation.navigate('Map')}
+        >
+          <View style={[styles.linkIconWrap, { backgroundColor: '#E0F2FE' }]}>
+            <Ionicons name="map-outline" size={20} color="#0284C7" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.linkTitle}>Live Route Map & GPS</Text>
+            <Text style={styles.linkSub}>Explore live carpool routes and traffic</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </TouchableOpacity>
+
+        {user?.role === 'ADMIN' ? (
+          <>
+            <View style={styles.linkDivider} />
+            <TouchableOpacity
+              style={styles.linkRow}
+              onPress={() => navigation.navigate('Admin')}
+            >
+              <View style={[styles.linkIconWrap, { backgroundColor: '#EDE9FE' }]}>
+                <Ionicons name="shield-checkmark-outline" size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.linkTitle}>Admin Console & Operations</Text>
+                <Text style={styles.linkSub}>Enterprise analytics, verification & ride management</Text>
+              </View>
+              <Badge label="ADMIN" variant="purple" size="sm" />
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+          </>
+        ) : null}
       </View>
 
       {/* ── Saved Places ── */}

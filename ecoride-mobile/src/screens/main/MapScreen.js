@@ -1,5 +1,5 @@
 /**
- * MapScreen.js — MapLibre + OpenFreeMap (Ola/Rapido-style)
+ * MapScreen.js — MapLibre + OpenFreeMap (Corporate carpooling GPS tracking)
  *
  * Stack:
  *  MapLibre React Native v10     — native vector map renderer
@@ -413,7 +413,17 @@ export default function MapScreen({ navigation }) {
 
       {/* ── Top search panel ── */}
       <SafeAreaView style={styles.safeTop} pointerEvents="box-none">
-        <View style={styles.searchCard}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+          {navigation?.canGoBack?.() ? (
+            <TouchableOpacity
+              style={styles.backFab}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-back" size={20} color={colors.text} />
+            </TouchableOpacity>
+          ) : null}
+          <View style={[styles.searchCard, { flex: 1 }]}>
           {/* From */}
           <View style={styles.inputRow}>
             <View style={[styles.inputDot, { backgroundColor: colors.brown }]} />
@@ -491,6 +501,7 @@ export default function MapScreen({ navigation }) {
               {loading ? 'Finding route…' : 'Get Route & ETA'}
             </Text>
           </TouchableOpacity>
+        </View>
         </View>
       </SafeAreaView>
 
@@ -618,6 +629,21 @@ const styles = StyleSheet.create({
   safeTop: {
     position: 'absolute', top: 0, left: 0, right: 0,
     paddingTop: SB_H + 10, paddingHorizontal: 14,
+  },
+  backFab: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    borderWidth: 1,
+    borderColor: colors.line,
   },
   searchCard: {
     backgroundColor: '#FFFFFF',

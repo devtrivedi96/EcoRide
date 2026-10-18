@@ -44,7 +44,24 @@ async function publishRide(userEmail, body) {
     routeWaypoints: body.routeWaypoints || body.route_waypoints || null,
   });
 
-  return mapToDto(ride, driver, vehicle, []);
+  const dto = mapToDto(ride, driver, vehicle, []);
+
+  try {
+    const { getIo } = require('../config/socket');
+    const io = getIo();
+    io.emit('route-match-found', {
+      rideId: ride.id,
+      driverName: `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || driver.email,
+      pickup: ride.pickupLocation,
+      destination: ride.destination,
+      fare: ride.farePerSeat,
+      departureTime: ride.departureTime,
+    });
+  } catch (err) {
+    // Non-fatal if socket not initialized
+  }
+
+  return dto;
 }
 
 async function searchRides(pickup, destination, time, seats = 1) {

@@ -64,7 +64,6 @@ function AuthStack() {
 }
 
 function Tabs() {
-  const { user } = useAuth();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -85,7 +84,7 @@ function Tabs() {
           backgroundColor: '#FFFFFF',
           borderTopColor: colors.line,
           borderTopWidth: 1,
-          height: 60,
+          height: 62,
           paddingBottom: 8,
           paddingTop: 6,
         },
@@ -93,7 +92,7 @@ function Tabs() {
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '600',
+          fontWeight: '700',
         },
         tabBarIcon: ({ color, focused }) => (
           <Ionicons
@@ -107,40 +106,23 @@ function Tabs() {
       <Tab.Screen
         name="Home"
         component={DashboardScreen}
-        options={{ title: 'EcoRide' }}
+        options={{ title: 'EcoRide', tabBarLabel: 'Home' }}
       />
       <Tab.Screen
         name="Find"
         component={SearchRidesScreen}
-        options={{ title: 'Find Rides' }}
-      />
-      <Tab.Screen
-        name="Map"
-        component={MapScreen}
-        options={{ title: 'Live Map', headerShown: false }}
+        options={{ title: 'Find Rides', tabBarLabel: 'Find' }}
       />
       <Tab.Screen
         name="Trips"
         component={TripsScreen}
-        options={{ title: 'My Rides' }}
-      />
-      <Tab.Screen
-        name="Wallet"
-        component={WalletScreen}
-        options={{ title: 'Wallet' }}
+        options={{ title: 'My Rides', tabBarLabel: 'Trips' }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{ title: 'Profile' }}
+        options={{ title: 'Account Hub', tabBarLabel: 'Account' }}
       />
-      {user?.role === 'ADMIN' ? (
-        <Tab.Screen
-          name="Admin"
-          component={AdminScreen}
-          options={{ title: 'Admin' }}
-        />
-      ) : null}
     </Tab.Navigator>
   );
 }
@@ -152,6 +134,21 @@ function AppStack() {
         name="MainTabs"
         component={Tabs}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Map"
+        component={MapScreen}
+        options={{ title: 'Live Route Map', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Wallet"
+        component={WalletScreen}
+        options={{ title: 'EcoRide Wallet' }}
+      />
+      <Stack.Screen
+        name="Admin"
+        component={AdminScreen}
+        options={{ title: 'Admin Console' }}
       />
       <Stack.Screen
         name="RideDetails"
@@ -202,11 +199,8 @@ function iconFor(name, focused) {
   const icons = {
     Home: focused ? 'home' : 'home-outline',
     Find: focused ? 'search' : 'search-outline',
-    Map: focused ? 'map' : 'map-outline',
     Trips: focused ? 'ticket' : 'ticket-outline',
-    Wallet: focused ? 'wallet' : 'wallet-outline',
-    Profile: focused ? 'person' : 'person-outline',
-    Admin: focused ? 'shield-checkmark' : 'shield-checkmark-outline',
+    Profile: focused ? 'person-circle' : 'person-circle-outline',
   };
   return icons[name] || 'ellipse-outline';
 }
