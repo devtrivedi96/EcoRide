@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-me';
-const JWT_EXPIRATION = parseInt(process.env.JWT_EXPIRATION) || 86400000; // ms → convert to seconds
+const JWT_EXPIRATION = parseInt(process.env.JWT_EXPIRATION) || 31536000000; // default 1 year (ms)
 
 /**
  * Equivalent to Spring Boot JwtService

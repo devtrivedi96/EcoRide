@@ -46,4 +46,35 @@ router.delete('/saved-places/:id', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Vehicle Management ────────────────────────────────────────────────────────
+const vehicleService = require('../services/vehicleService');
+
+// GET /api/users/vehicles
+router.get('/vehicles', authenticate, async (req, res, next) => {
+  try { res.json(await vehicleService.getMyVehicles(req.user.email)); } catch (err) { next(err); }
+});
+
+// POST /api/users/vehicles
+router.post('/vehicles', authenticate, async (req, res, next) => {
+  try { res.status(201).json(await vehicleService.registerVehicle(req.user.email, req.body)); } catch (err) {
+    if (err.message.includes('required') || err.message.includes('already registered')) {
+      return res.status(400).json({ message: err.message });
+    }
+    next(err);
+  }
+});
+
+// DELETE /api/users/vehicles/:id
+router.delete('/vehicles/:id', authenticate, async (req, res, next) => {
+  try {
+    await vehicleService.deleteVehicle(req.user.email, req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    if (err.message === 'Vehicle not found') return res.status(404).json({ message: err.message });
+    if (err.message.includes('Unauthorized')) return res.status(403).json({ message: err.message });
+    next(err);
+  }
+});
+
 module.exports = router;
+

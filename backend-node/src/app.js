@@ -17,6 +17,7 @@ const adminRoutes     = require('./routes/adminRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const chatRoutes      = require('./routes/chatRoutes');
 const auditRoutes     = require('./routes/auditRoutes');
+const vehicleRoutes   = require('./routes/vehicleRoutes');
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -95,6 +96,7 @@ app.use('/api/admin',     adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/chat',      chatRoutes);
 app.use('/api/audit',     auditRoutes);
+app.use('/api/vehicles',  vehicleRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
