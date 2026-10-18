@@ -9,9 +9,26 @@ async function publishRide(userEmail, body) {
   if (!driver) throw new Error('Driver not found');
 
   const vehicleId = body.vehicleId || body.vehicle_id;
-  const vehicle = await findById(COLLECTIONS.VEHICLES, vehicleId);
-  if (!vehicle) throw new Error('Vehicle not found');
-  if (vehicle.ownerId !== driver.id) throw new Error('Driver must own the vehicle to publish a ride');
+  let vehicle = vehicleId ? await findById(COLLECTIONS.VEHICLES, vehicleId) : null;
+
+  if (!vehicle || vehicle.ownerId !== driver.id) {
+    const driverVehicles = await findAll(COLLECTIONS.VEHICLES, [['ownerId', '==', driver.id]]);
+    if (driverVehicles.length > 0) {
+      vehicle = driverVehicles[0];
+    } else {
+      vehicle = await create(COLLECTIONS.VEHICLES, {
+        ownerId: driver.id,
+        model: body.vehicleModel || 'Electric Sedan',
+        registrationNumber: body.vehicleRegistration || `KA-01-${Date.now().toString().slice(-4)}`,
+        seatingCapacity: 4,
+        vehicleType: 'ELECTRIC',
+      });
+    }
+  }
+
+  if (driver.role === 'EMPLOYEE') {
+    await update(COLLECTIONS.USERS, driver.id, { role: 'DRIVER' });
+  }
 
   const seats = body.availableSeats ?? body.available_seats;
   if (seats > vehicle.seatingCapacity) throw new Error('Available seats cannot exceed vehicle capacity');
