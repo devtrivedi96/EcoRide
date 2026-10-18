@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -7,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { rideApi } from '../../api/rideApi';
 import { vehicleApi } from '../../api/vehicleApi';
@@ -48,6 +50,14 @@ export default function PublishRideScreen({ route, navigation }) {
     preferences: ['AC', 'Quiet Ride', 'No Smoking'],
   });
 
+  // Whenever route.params?.vehicleId updates (e.g. from VehiclesScreen "Use to Publish"), sync immediately
+  useEffect(() => {
+    if (route.params?.vehicleId) {
+      setValue('vehicleId', route.params.vehicleId);
+    }
+  }, [route.params?.vehicleId]);
+
+  // Initial GPS location detection
   useEffect(() => {
     (async () => {
       try {
@@ -59,24 +69,47 @@ export default function PublishRideScreen({ route, navigation }) {
         console.warn('PublishRide auto-detect location error:', err);
       }
     })();
+  }, []);
 
-    (async () => {
-      setLoadingVehicles(true);
-      try {
-        const vList = await vehicleApi.getMyVehicles();
-        if (vList && vList.length > 0) {
-          setUserVehicles(vList);
-          if (!route.params?.vehicleId) {
-            setValue('vehicleId', vList[0].id);
+  // Reload vehicles every time PublishRideScreen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      (async () => {
+        setLoadingVehicles(true);
+        try {
+          const vList = await vehicleApi.getMyVehicles();
+          if (isMounted && Array.isArray(vList) && vList.length > 0) {
+            setUserVehicles(vList);
+            setForm((prev) => {
+              const currentId = route.params?.vehicleId || prev.vehicleId;
+              const exists = vList.some((v) => v.id === currentId);
+              const selectedId = exists ? currentId : vList[0].id;
+              const matchedVehicle = vList.find((v) => v.id === selectedId);
+              return {
+                ...prev,
+                vehicleId: selectedId,
+                availableSeats:
+                  matchedVehicle?.seatingCapacity && !prev.availableSeats
+                    ? String(Math.max(1, matchedVehicle.seatingCapacity - 1))
+                    : prev.availableSeats,
+              };
+            });
+          }
+        } catch (err) {
+          console.warn('PublishRide load vehicles error:', err);
+        } finally {
+          if (isMounted) {
+            setLoadingVehicles(false);
           }
         }
-      } catch (err) {
-        console.warn('PublishRide load vehicles error:', err);
-      } finally {
-        setLoadingVehicles(false);
-      }
-    })();
-  }, [route.params?.vehicleId]);
+      })();
+
+      return () => {
+        isMounted = false;
+      };
+    }, [route.params?.vehicleId])
+  );
 
   function setValue(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -108,8 +141,13 @@ export default function PublishRideScreen({ route, navigation }) {
         return;
       }
     } else if (currentStep === 3) {
-      if (!form.vehicleId.trim()) {
-        Alert.alert('Missing Details', 'Please select or enter a vehicle ID.');
+      let selectedVehId = form.vehicleId.trim();
+      if (!selectedVehId && userVehicles.length > 0) {
+        selectedVehId = userVehicles[0].id;
+        setValue('vehicleId', selectedVehId);
+      }
+      if (!selectedVehId) {
+        Alert.alert('Vehicle Required', 'Please register or select a vehicle to offer a ride.');
         return;
       }
     } else if (currentStep === 4) {
@@ -128,8 +166,13 @@ export default function PublishRideScreen({ route, navigation }) {
   async function handlePublish() {
     setLoading(true);
     try {
+      let selectedVehId = form.vehicleId.trim();
+      if (!selectedVehId && userVehicles.length > 0) {
+        selectedVehId = userVehicles[0].id;
+      }
+
       const payload = {
-        vehicleId: form.vehicleId.trim(),
+        vehicleId: selectedVehId,
         pickupLocation: form.pickupLocation.trim(),
         destination: form.destination.trim(),
         departureTime: new Date(form.departureTime).toISOString(),
@@ -404,8 +447,24 @@ export default function PublishRideScreen({ route, navigation }) {
             </Text>
           </View>
 
+          <View style={styles.vehicleHeaderBar}>
+            <Text style={styles.vehicleListHeaderTitle}>Registered Vehicles</Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Vehicles')}
+              style={styles.addVehicleLink}
+            >
+              <Ionicons name="add-circle-outline" size={15} color={colors.green} />
+              <Text style={styles.addVehicleLinkText}>Manage / Add</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.vehicleList}>
-            {userVehicles.length > 0 ? (
+            {loadingVehicles ? (
+              <View style={styles.loadingVehiclesBox}>
+                <ActivityIndicator size="small" color={colors.green} />
+                <Text style={styles.loadingVehiclesText}>Loading registered vehicles...</Text>
+              </View>
+            ) : userVehicles.length > 0 ? (
               userVehicles.map((v) => {
                 const isSelected = form.vehicleId === v.id;
                 return (
@@ -555,8 +614,16 @@ export default function PublishRideScreen({ route, navigation }) {
                 <Text style={styles.editBtn}>Edit</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.reviewVal}>Vehicle ID: {form.vehicleId}</Text>
-            <Text style={styles.reviewSub}>{form.availableSeats} seats · {currency(form.farePerSeat)} per seat</Text>
+            <Text style={styles.reviewVal}>
+              {userVehicles.find((v) => v.id === form.vehicleId)?.model || 'Corporate Vehicle'}{' '}
+              ({userVehicles.find((v) => v.id === form.vehicleId)?.registrationNumber || form.vehicleId})
+            </Text>
+            <Text style={styles.reviewSub}>
+              {userVehicles.find((v) => v.id === form.vehicleId)?.vehicleType === 'ELECTRIC'
+                ? '⚡ 100% Electric Vehicle · '
+                : ''}
+              {form.availableSeats} seats · {currency(form.farePerSeat)} per seat
+            </Text>
           </View>
         </Card>
       )}
@@ -731,6 +798,42 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.greenText,
     marginTop: 2,
+  },
+  vehicleHeaderBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  vehicleListHeaderTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    textTransform: 'uppercase',
+  },
+  addVehicleLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addVehicleLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.green,
+  },
+  loadingVehiclesBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 16,
+    backgroundColor: colors.panelSoft,
+    borderRadius: spacing.radiusSm,
+  },
+  loadingVehiclesText: {
+    fontSize: 12,
+    color: colors.muted,
   },
   vehicleList: {
     gap: 8,
