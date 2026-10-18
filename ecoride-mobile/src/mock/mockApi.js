@@ -207,6 +207,46 @@ export const mockChatApi = {
 };
 
 // ─── Socket stub (mock mode — no real WS) ────────────────────────────────────
+// ─── Vehicles (mock mode) ─────────────────────────────────────────────────────
+let mockUserVehicles = [...MOCK_VEHICLES];
+
+export const mockVehicleApi = {
+  getMyVehicles: async () => {
+    await delay();
+    return mockUserVehicles;
+  },
+  registerVehicle: async (payload) => {
+    await delay();
+    const newVehicle = {
+      id: `veh-${Date.now().toString().slice(-4)}`,
+      model: payload.model,
+      registrationNumber: payload.registrationNumber || payload.regNo,
+      seatingCapacity: Number(payload.seatingCapacity || payload.capacity) || 4,
+      vehicleType: payload.vehicleType || (payload.isEV ? 'ELECTRIC' : 'PETROL'),
+      userId: MOCK_USER.id,
+    };
+    mockUserVehicles = [newVehicle, ...mockUserVehicles];
+    return newVehicle;
+  },
+  deleteVehicle: async (id) => {
+    await delay();
+    mockUserVehicles = mockUserVehicles.filter((v) => v.id !== id);
+  },
+  adminList: async () => {
+    await delay();
+    return mockUserVehicles;
+  },
+  adminUpdate: async (id, payload) => {
+    await delay();
+    mockUserVehicles = mockUserVehicles.map((v) => (v.id === id ? { ...v, ...payload } : v));
+    return mockUserVehicles.find((v) => v.id === id);
+  },
+  adminDelete: async (id) => {
+    await delay();
+    mockUserVehicles = mockUserVehicles.filter((v) => v.id !== id);
+  },
+};
+
 export function createMockTripSocket(tripId, onMessage) {
   const listeners = {};
   return {
@@ -228,3 +268,4 @@ export function createMockTripSocket(tripId, onMessage) {
     disconnect: () => {},
   };
 }
+

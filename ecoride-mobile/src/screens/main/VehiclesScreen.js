@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Modal,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -14,11 +17,15 @@ import Field from '../../components/Field';
 import Screen from '../../components/Screen';
 import Badge from '../../components/Badge';
 import EmptyState from '../../components/EmptyState';
+import { vehicleApi } from '../../api/vehicleApi';
 import { colors, spacing } from '../../utils/theme';
-import { MOCK_VEHICLES } from '../../mock/mockData';
+import { getErrorMessage } from '../../utils/format';
 
 export default function VehiclesScreen({ navigation }) {
-  const [vehicles, setVehicles] = useState([...MOCK_VEHICLES]);
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
 
@@ -28,31 +35,87 @@ export default function VehiclesScreen({ navigation }) {
   const [capacity, setCapacity] = useState('4');
   const [isEV, setIsEV] = useState(true);
 
-  function handleSaveVehicle() {
+  const loadVehicles = useCallback(async (isPullRefresh = false) => {
+    if (isPullRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    try {
+      const data = await vehicleApi.getMyVehicles();
+      setVehicles(data || []);
+    } catch (err) {
+      console.warn('Failed to load vehicles from database:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadVehicles();
+    }, [loadVehicles])
+  );
+
+  async function handleSaveVehicle() {
     if (!model.trim() || !regNo.trim()) {
       Alert.alert('Missing fields', 'Vehicle model and registration number are required.');
       return;
     }
 
-    const newVehicle = {
-      id: `veh-${Date.now().toString().slice(-4)}`,
-      userId: 'mock-user-001',
-      model: model.trim(),
-      registrationNumber: regNo.trim().toUpperCase(),
-      seatingCapacity: Number(capacity) || 4,
-      vehicleType: isEV ? 'ELECTRIC' : 'PETROL',
-    };
+    setSaving(true);
+    try {
+      const newVehicle = await vehicleApi.registerVehicle({
+        model: model.trim(),
+        registrationNumber: regNo.trim().toUpperCase(),
+        seatingCapacity: Number(capacity) || 4,
+        vehicleType: isEV ? 'ELECTRIC' : 'PETROL',
+      });
 
-    setVehicles((current) => [newVehicle, ...current]);
-    setModalVisible(false);
-    setModel('');
-    setRegNo('');
-    setSuccessMsg(`✓ Vehicle ${newVehicle.model} added successfully!`);
-    setTimeout(() => setSuccessMsg(null), 4000);
+      setModalVisible(false);
+      setModel('');
+      setRegNo('');
+      setCapacity('4');
+      setSuccessMsg(`✓ Vehicle ${newVehicle.model} registered successfully in database!`);
+      setTimeout(() => setSuccessMsg(null), 4000);
+      await loadVehicles();
+    } catch (error) {
+      Alert.alert('Registration Failed', getErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleDeleteVehicle(vehicleId, vehicleModel) {
+    Alert.alert(
+      'Remove Vehicle',
+      `Are you sure you want to remove ${vehicleModel || 'this vehicle'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await vehicleApi.deleteVehicle(vehicleId);
+              await loadVehicles();
+            } catch (error) {
+              Alert.alert('Could not remove vehicle', getErrorMessage(error));
+            }
+          },
+        },
+      ]
+    );
   }
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => loadVehicles(true)} />
+      }
+      contentStyle={styles.content}
+    >
       {/* ── Success Toast Banner ── */}
       {successMsg ? (
         <View style={styles.successBanner}>
@@ -66,7 +129,7 @@ export default function VehiclesScreen({ navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Registered Vehicles</Text>
           <Text style={styles.subtitle}>
-            Vehicles registered to offer corporate carpool rides.
+            Vehicles stored in the database to offer corporate carpool rides.
           </Text>
         </View>
         <Button
@@ -77,8 +140,13 @@ export default function VehiclesScreen({ navigation }) {
         />
       </View>
 
-      {/* ── Vehicle Cards ── */}
-      {vehicles.length ? (
+      {/* ── Loading Spinner ── */}
+      {loading && !refreshing ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="small" color={colors.green} />
+          <Text style={styles.loadingText}>Fetching vehicles from database...</Text>
+        </View>
+      ) : vehicles.length ? (
         vehicles.map((v) => (
           <Card key={v.id} style={styles.vehicleCard}>
             <View style={styles.cardHeader}>
@@ -101,20 +169,28 @@ export default function VehiclesScreen({ navigation }) {
               </View>
               <View style={styles.metaItem}>
                 <Ionicons name="shield-checkmark-outline" size={14} color={colors.green} />
-                <Text style={styles.metaText}>Corporate Verified</Text>
+                <Text style={styles.metaText}>Database Verified</Text>
               </View>
             </View>
 
             <View style={styles.cardFooter}>
               <Text style={styles.vehicleId}>ID: {v.id}</Text>
-              <Button
-                title="Use to Publish"
-                variant="ghost"
-                size="sm"
-                onPress={() => {
-                  navigation.navigate('PublishRide', { vehicleId: v.id });
-                }}
-              />
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  style={styles.deleteBtn}
+                  onPress={() => handleDeleteVehicle(v.id, v.model)}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.red} />
+                </TouchableOpacity>
+                <Button
+                  title="Use to Publish"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => {
+                    navigation.navigate('PublishRide', { vehicleId: v.id });
+                  }}
+                />
+              </View>
             </View>
           </Card>
         ))
@@ -134,14 +210,14 @@ export default function VehiclesScreen({ navigation }) {
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Register New Vehicle</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity onPress={() => !saving && setModalVisible(false)}>
                 <Ionicons name="close" size={24} color={colors.muted} />
               </TouchableOpacity>
             </View>
 
             <Field
               label="Vehicle Model"
-              placeholder="e.g. Tata Nexon EV, MG ZS EV"
+              placeholder="e.g. Tata Nexon EV, MG ZS EV, Honda City"
               value={model}
               onChangeText={setModel}
             />
@@ -184,10 +260,12 @@ export default function VehiclesScreen({ navigation }) {
                 title="Cancel"
                 variant="ghost"
                 style={{ flex: 1 }}
+                disabled={saving}
                 onPress={() => setModalVisible(false)}
               />
               <Button
                 title="Save Vehicle"
+                loading={saving}
                 style={{ flex: 1 }}
                 onPress={handleSaveVehicle}
               />
@@ -203,6 +281,15 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: 40,
     gap: 14,
+  },
+  loadingBox: {
+    padding: 24,
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    color: colors.muted,
   },
   successBanner: {
     flexDirection: 'row',
@@ -285,6 +372,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.muted,
     fontWeight: '600',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deleteBtn: {
+    padding: 6,
+    borderRadius: spacing.radiusSm,
   },
   modalBackdrop: {
     flex: 1,

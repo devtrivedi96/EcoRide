@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { rideApi } from '../../api/rideApi';
+import { vehicleApi } from '../../api/vehicleApi';
 import Badge from '../../components/Badge';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -16,7 +17,6 @@ import Field from '../../components/Field';
 import Screen from '../../components/Screen';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage } from '../../utils/format';
-import { MOCK_VEHICLES } from '../../mock/mockData';
 import { getCurrentUserAddress } from '../../utils/location';
 
 const STEPS = [
@@ -28,11 +28,13 @@ const STEPS = [
 ];
 
 export default function PublishRideScreen({ route, navigation }) {
-  const defaultVehicleId = route.params?.vehicleId || 'veh-001';
+  const defaultVehicleId = route.params?.vehicleId || '';
 
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [publishedRide, setPublishedRide] = useState(null);
+  const [userVehicles, setUserVehicles] = useState([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(false);
 
   // Form State preserved across all steps
   const [form, setForm] = useState({
@@ -57,7 +59,24 @@ export default function PublishRideScreen({ route, navigation }) {
         console.warn('PublishRide auto-detect location error:', err);
       }
     })();
-  }, []);
+
+    (async () => {
+      setLoadingVehicles(true);
+      try {
+        const vList = await vehicleApi.getMyVehicles();
+        if (vList && vList.length > 0) {
+          setUserVehicles(vList);
+          if (!route.params?.vehicleId) {
+            setValue('vehicleId', vList[0].id);
+          }
+        }
+      } catch (err) {
+        console.warn('PublishRide load vehicles error:', err);
+      } finally {
+        setLoadingVehicles(false);
+      }
+    })();
+  }, [route.params?.vehicleId]);
 
   function setValue(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -386,42 +405,65 @@ export default function PublishRideScreen({ route, navigation }) {
           </View>
 
           <View style={styles.vehicleList}>
-            {MOCK_VEHICLES.map((v) => {
-              const isSelected = form.vehicleId === v.id;
-              return (
-                <TouchableOpacity
-                  key={v.id}
-                  style={[styles.vehicleSelectCard, isSelected && styles.vehicleSelectCardActive]}
-                  onPress={() => setValue('vehicleId', v.id)}
-                >
-                  <View style={styles.vehicleSelectLeft}>
-                    <View
-                      style={[
-                        styles.radioCircle,
-                        isSelected && styles.radioCircleActive,
-                      ]}
-                    >
-                      {isSelected ? <View style={styles.radioInner} /> : null}
+            {userVehicles.length > 0 ? (
+              userVehicles.map((v) => {
+                const isSelected = form.vehicleId === v.id;
+                return (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[styles.vehicleSelectCard, isSelected && styles.vehicleSelectCardActive]}
+                    onPress={() => {
+                      setValue('vehicleId', v.id);
+                      if (v.seatingCapacity) {
+                        setValue('availableSeats', String(Math.max(1, v.seatingCapacity - 1)));
+                      }
+                    }}
+                  >
+                    <View style={styles.vehicleSelectLeft}>
+                      <View
+                        style={[
+                          styles.radioCircle,
+                          isSelected && styles.radioCircleActive,
+                        ]}
+                      >
+                        {isSelected ? <View style={styles.radioInner} /> : null}
+                      </View>
+                      <View>
+                        <Text style={styles.vehicleSelectName}>{v.model}</Text>
+                        <Text style={styles.vehicleSelectReg}>
+                          {v.registrationNumber} · {v.seatingCapacity} seats
+                        </Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={styles.vehicleSelectName}>{v.model}</Text>
-                      <Text style={styles.vehicleSelectReg}>{v.registrationNumber} · {v.seatingCapacity} seats</Text>
-                    </View>
-                  </View>
-                  <Badge
-                    label={v.vehicleType === 'ELECTRIC' ? 'EV' : 'Standard'}
-                    variant={v.vehicleType === 'ELECTRIC' ? 'green' : 'neutral'}
-                    size="sm"
-                  />
-                </TouchableOpacity>
-              );
-            })}
+                    <Badge
+                      label={v.vehicleType === 'ELECTRIC' ? 'EV' : 'Standard'}
+                      variant={v.vehicleType === 'ELECTRIC' ? 'green' : 'neutral'}
+                      size="sm"
+                    />
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.noVehiclesBox}>
+                <Ionicons name="car-outline" size={24} color={colors.amber} />
+                <Text style={styles.noVehiclesTitle}>No Vehicles Registered in Database</Text>
+                <Text style={styles.noVehiclesSub}>
+                  You need to register your vehicle before you can offer rides to colleagues.
+                </Text>
+                <Button
+                  title="Register Vehicle Now"
+                  icon="add-circle-outline"
+                  size="sm"
+                  onPress={() => navigation.navigate('Vehicles')}
+                />
+              </View>
+            )}
           </View>
 
           <Field
             label="Or Enter Vehicle ID"
             icon="key-outline"
-            placeholder="e.g. veh-001"
+            placeholder="e.g. JtukyecGbddq0mly0Vu5"
             value={form.vehicleId}
             onChangeText={(v) => setValue('vehicleId', v)}
           />
@@ -692,6 +734,29 @@ const styles = StyleSheet.create({
   },
   vehicleList: {
     gap: 8,
+  },
+  noVehiclesBox: {
+    padding: 16,
+    backgroundColor: colors.panelSoft,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    gap: 8,
+    textAlign: 'center',
+  },
+  noVehiclesTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  noVehiclesSub: {
+    fontSize: 12,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 4,
   },
   vehicleSelectCard: {
     flexDirection: 'row',
