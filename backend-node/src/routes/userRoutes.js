@@ -22,8 +22,67 @@ router.get('/me', authenticate, async (req, res, next) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
     const company = user.companyId ? await findById(COLLECTIONS.COMPANIES, user.companyId) : null;
     res.json({
-      id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email,
-      phoneNumber: user.phoneNumber, role: user.role, companyName: company?.name || null, driverLicense: user.driverLicense,
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      companyName: company?.name || null,
+      driverLicense: user.driverLicense,
+      homeAddress: user.homeAddress || null,
+      officeAddress: user.officeAddress || null,
+    });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/users/profile
+router.put('/profile', authenticate, async (req, res, next) => {
+  try {
+    const user = await findOne(COLLECTIONS.USERS, 'email', req.user.email);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const { firstName, lastName, phoneNumber, homeAddress, officeAddress } = req.body;
+    const updates = {};
+    if (firstName !== undefined) updates.firstName = firstName;
+    if (lastName !== undefined) updates.lastName = lastName;
+    if (phoneNumber !== undefined) updates.phoneNumber = phoneNumber;
+    if (homeAddress !== undefined) updates.homeAddress = homeAddress;
+    if (officeAddress !== undefined) updates.officeAddress = officeAddress;
+    await update(COLLECTIONS.USERS, user.id, updates);
+
+    // Also auto-sync to saved places if homeAddress or officeAddress is updated
+    if (homeAddress) {
+      try {
+        const existing = await savedLocationService.getSavedLocations(req.user.email);
+        const homeLoc = existing.find(l => (l.name || '').toLowerCase() === 'home');
+        if (!homeLoc) {
+          await savedLocationService.addSavedLocation(req.user.email, { name: 'Home', address: homeAddress });
+        }
+      } catch {}
+    }
+    if (officeAddress) {
+      try {
+        const existing = await savedLocationService.getSavedLocations(req.user.email);
+        const officeLoc = existing.find(l => (l.name || '').toLowerCase() === 'office');
+        if (!officeLoc) {
+          await savedLocationService.addSavedLocation(req.user.email, { name: 'Office', address: officeAddress });
+        }
+      } catch {}
+    }
+
+    const updated = await findById(COLLECTIONS.USERS, user.id);
+    const company = updated.companyId ? await findById(COLLECTIONS.COMPANIES, updated.companyId) : null;
+    res.json({
+      id: updated.id,
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+      email: updated.email,
+      phoneNumber: updated.phoneNumber,
+      role: updated.role,
+      companyName: company?.name || null,
+      driverLicense: updated.driverLicense,
+      homeAddress: updated.homeAddress || null,
+      officeAddress: updated.officeAddress || null,
     });
   } catch (err) { next(err); }
 });
