@@ -153,6 +153,18 @@ export default function RideDetailsScreen({ route, navigation }) {
             <Ionicons name="calendar-outline" size={15} color={colors.green} />
             <Text style={styles.scheduleText}>{formatDateTime(ride.departureTime)}</Text>
           </View>
+          <TouchableOpacity
+            style={styles.viewRouteMapBtn}
+            onPress={() =>
+              navigation.navigate('Map', {
+                pickup: ride.pickupLocation,
+                destination: ride.destination,
+              })
+            }
+          >
+            <Ionicons name="map-outline" size={14} color={colors.blue} />
+            <Text style={styles.viewRouteMapBtnText}>Live Route Map</Text>
+          </TouchableOpacity>
         </View>
       </Card>
 
@@ -617,5 +629,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 4,
+  },
+  viewRouteMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.blueLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: spacing.radiusSm,
+    borderWidth: 1,
+    borderColor: colors.blueBorder,
+  },
+  viewRouteMapBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.blue,
   },
 });

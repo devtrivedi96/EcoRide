@@ -15,6 +15,7 @@ import {
   Keyboard,
   Platform,
   SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -40,15 +41,90 @@ import { colors } from '../../utils/theme';
 // ── OpenFreeMap — 100% free, no API key ──────────────────────────────────────
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
-// ── Free routing & geocoding ──────────────────────────────────────────────────
-async function geocode(place, baseCoords = { lat: 12.9716, lng: 77.5946 }, baseCity = 'Bengaluru') {
-  const trimmed = place.trim();
+// ── Helper: Haversine distance in KM ───────────────────────────────────────────
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// ── Helper: Geodesic route arc interpolation fallback ─────────────────────────
+function generateArcCoordinates(start, end, numPoints = 25) {
+  const coords = [];
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    const lng = start.lng + (end.lng - start.lng) * t;
+    const lat = start.lat + (end.lat - start.lat) * t;
+    const curveOffset = Math.sin(t * Math.PI) * 0.003;
+    coords.push([lng + curveOffset, lat + curveOffset * 0.6]);
+  }
+  return coords;
+}
+
+// ── Multi-Tier Dynamic Geocoding Engine ───────────────────────────────────────
+// Tier 1: Native Android Google Play Services Geocoder (fastest, offline-capable)
+// Tier 2: Photon API (fuzzy OSM search with geographic bias)
+// Tier 3: Nominatim (city-scoped search)
+// Tier 4: Nominatim (viewbox-bounded search)
+// Tier 5: Nominatim (broad nationwide search)
+// Tier 6: Token simplification fallback
+async function geocode(place, baseCoords = { lat: 23.0225, lng: 72.5714 }, baseCity = 'Ahmedabad') {
+  const trimmed = (place || '').trim();
   if (!trimmed) throw new Error('Location cannot be empty');
 
-  // Check if query explicitly specifies another city
-  const hasCity = /(bangalore|bengaluru|delhi|mumbai|chennai|hyderabad|pune|kolkata|ahmedabad|noida|gurgaon)/i.test(trimmed);
+  const hasCity = /(bangalore|bengaluru|delhi|mumbai|chennai|hyderabad|pune|kolkata|ahmedabad|noida|gurgaon|gandhinagar)/i.test(trimmed);
 
-  // 1. Try with baseCity appended if query doesn't specify a city
+  // 1. Native device geocoder (Google Play Services on Android)
+  try {
+    const directResults = await Location.geocodeAsync(trimmed);
+    if (directResults && directResults.length > 0) {
+      return { lat: directResults[0].latitude, lng: directResults[0].longitude };
+    }
+  } catch {}
+
+  // 1b. Native geocoder with city appended
+  if (!hasCity && baseCity) {
+    try {
+      const cityResults = await Location.geocodeAsync(`${trimmed}, ${baseCity}`);
+      if (cityResults && cityResults.length > 0) {
+        return { lat: cityResults[0].latitude, lng: cityResults[0].longitude };
+      }
+    } catch {}
+  }
+
+  // 2. Photon API with coordinate proximity bias
+  try {
+    const photonQuery = !hasCity && baseCity ? `${trimmed} ${baseCity}` : trimmed;
+    const pUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(photonQuery)}&lat=${baseCoords.lat}&lon=${baseCoords.lng}&limit=6`;
+    const pRes = await fetch(pUrl, { headers: { 'User-Agent': 'EcoRideApp/1.0' } });
+    const pData = await pRes.json();
+    const features = pData?.features || [];
+    if (features.length > 0) {
+      const candidates = features
+        .map((f) => {
+          const [lng, lat] = f.geometry?.coordinates || [0, 0];
+          const dist = distanceKm(baseCoords.lat, baseCoords.lng, lat, lng);
+          const isIndia = !f.properties?.countrycode || f.properties.countrycode.toUpperCase() === 'IN';
+          return { lat, lng, dist, isIndia };
+        })
+        .filter((c) => c.isIndia || c.dist < 800);
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => a.dist - b.dist);
+        return { lat: candidates[0].lat, lng: candidates[0].lng };
+      }
+    }
+  } catch {}
+
+  // 3. Nominatim with baseCity appended
   if (!hasCity && baseCity) {
     try {
       const localQuery = `${trimmed}, ${baseCity}`;
@@ -61,7 +137,7 @@ async function geocode(place, baseCoords = { lat: 12.9716, lng: 77.5946 }, baseC
     } catch {}
   }
 
-  // 2. Try with viewbox bias around baseCoords
+  // 4. Nominatim with viewbox bias around baseCoords
   try {
     const d = 0.5;
     const viewbox = `${baseCoords.lng - d},${baseCoords.lat + d},${baseCoords.lng + d},${baseCoords.lat - d}`;
@@ -73,31 +149,168 @@ async function geocode(place, baseCoords = { lat: 12.9716, lng: 77.5946 }, baseC
     }
   } catch {}
 
-  // 3. Fallback to broad search
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=1&countrycodes=in`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'EcoRideApp/1.0' } });
-  const json = await res.json();
-  if (!json.length) throw new Error(`"${trimmed}" not found. Try adding city name.`);
-  return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon) };
+  // 5. Nominatim broad nationwide search
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=1&countrycodes=in`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'EcoRideApp/1.0' } });
+    const json = await res.json();
+    if (json && json.length > 0) {
+      return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon) };
+    }
+  } catch {}
+
+  // 6. Token simplification fallback (first 2 words)
+  const words = trimmed.split(/[\s,]+/).filter((w) => w.length > 2);
+  if (words.length > 2) {
+    const simplified = words.slice(0, 2).join(' ');
+    try {
+      const fallbackUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(simplified + ' ' + baseCity)}&lat=${baseCoords.lat}&lon=${baseCoords.lng}&limit=3`;
+      const res = await fetch(fallbackUrl, { headers: { 'User-Agent': 'EcoRideApp/1.0' } });
+      const data = await res.json();
+      if (data?.features?.length > 0) {
+        const [lng, lat] = data.features[0].geometry.coordinates;
+        return { lat, lng };
+      }
+    } catch {}
+  }
+
+  throw new Error(`Location "${trimmed}" could not be found. Try entering a nearby landmark or city name.`);
 }
 
+// ── Dynamic Autocomplete Suggestions Engine ──────────────────────────────────
+async function fetchDynamicSuggestions(query, baseCoords = { lat: 23.0225, lng: 72.5714 }, baseCity = 'Ahmedabad') {
+  const trimmed = (query || '').trim();
+  if (trimmed.length < 2) return [];
+
+  const hasCity = /(bangalore|bengaluru|delhi|mumbai|chennai|hyderabad|pune|kolkata|ahmedabad|noida|gurgaon|gandhinagar)/i.test(trimmed);
+
+  // 1. Photon fast autocomplete with proximity bias
+  try {
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(trimmed)}&lat=${baseCoords.lat}&lon=${baseCoords.lng}&limit=8`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'EcoRideApp/1.0' } });
+    const data = await res.json();
+    const features = data?.features || [];
+
+    if (features.length > 0) {
+      const mapped = features
+        .map((f, idx) => {
+          const p = f.properties || {};
+          const [lng, lat] = f.geometry?.coordinates || [0, 0];
+          const dist = distanceKm(baseCoords.lat, baseCoords.lng, lat, lng);
+          const isIndia = !p.countrycode || p.countrycode.toUpperCase() === 'IN';
+          const subParts = [p.district, p.locality, p.suburb, p.city, p.state].filter(Boolean);
+          const uniqueSub = [...new Set(subParts)].join(', ');
+
+          return {
+            id: `${lat.toFixed(5)}_${lng.toFixed(5)}_${idx}`,
+            title: p.name || p.street || trimmed,
+            subtitle: uniqueSub || p.country || '',
+            coords: { lat, lng },
+            dist,
+            isIndia,
+          };
+        })
+        .filter((item) => item.isIndia || item.dist < 800)
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 5);
+
+      if (mapped.length > 0) return mapped;
+    }
+  } catch {}
+
+  // 2. Nominatim fallback
+  try {
+    const nomQuery = !hasCity && baseCity ? `${trimmed}, ${baseCity}` : trimmed;
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(nomQuery)}&format=json&limit=5&countrycodes=in`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'EcoRideApp/1.0' } });
+    const json = await res.json();
+    if (json && json.length > 0) {
+      return json.slice(0, 5).map((item, idx) => {
+        const parts = (item.display_name || '').split(',');
+        const title = parts[0] || trimmed;
+        const subtitle = parts.slice(1, 4).join(',').trim();
+        const lat = parseFloat(item.lat);
+        const lng = parseFloat(item.lon);
+        return {
+          id: `nom_${item.place_id || idx}`,
+          title,
+          subtitle,
+          coords: { lat, lng },
+          dist: distanceKm(baseCoords.lat, baseCoords.lng, lat, lng),
+          isIndia: true,
+        };
+      });
+    }
+  } catch {}
+
+  return [];
+}
+
+// ── Resilient Routing Engine (OSRM Primary + OpenStreetMap Mirror + Geodesic Fallback) ──
 async function getRoute(from, to) {
-  const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
-  const res  = await fetch(url);
-  const json = await res.json();
-  if (json.code !== 'Ok') throw new Error('No route found.');
-  const r = json.routes[0];
+  // 1. Primary OSRM public server
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.code === 'Ok' && json.routes && json.routes.length > 0) {
+      const r = json.routes[0];
+      return {
+        geojson: {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            properties: {},
+            geometry: r.geometry,
+          }],
+        },
+        distance: (r.distance / 1000).toFixed(1),
+        duration: Math.round(r.duration / 60),
+      };
+    }
+  } catch {}
+
+  // 2. Secondary OSRM mirror
+  try {
+    const mirrorUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+    const mRes = await fetch(mirrorUrl);
+    const mJson = await mRes.json();
+    if (mJson.code === 'Ok' && mJson.routes && mJson.routes.length > 0) {
+      const r = mJson.routes[0];
+      return {
+        geojson: {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            properties: {},
+            geometry: r.geometry,
+          }],
+        },
+        distance: (r.distance / 1000).toFixed(1),
+        duration: Math.round(r.duration / 60),
+      };
+    }
+  } catch {}
+
+  // 3. Fallback: Resilient geodesic interpolation
+  const dist = distanceKm(from.lat, from.lng, to.lat, to.lng);
+  const drivingDist = (dist * 1.25).toFixed(1);
+  const estMinutes = Math.max(5, Math.round((drivingDist / 32) * 60));
+
   return {
     geojson: {
       type: 'FeatureCollection',
       features: [{
         type: 'Feature',
         properties: {},
-        geometry: r.geometry,
+        geometry: {
+          type: 'LineString',
+          coordinates: generateArcCoordinates(from, to),
+        },
       }],
     },
-    distance: (r.distance / 1000).toFixed(1),
-    duration: Math.round(r.duration / 60),
+    distance: drivingDist,
+    duration: estMinutes,
   };
 }
 
@@ -113,7 +326,7 @@ async function resolveLocationDetails(latitude, longitude) {
     const city = addr.city || addr.town || addr.state_district || addr.state || '';
     if (locality || city) {
       const area = locality || city;
-      const full = locality && city && locality !== city ? `${locality}, ${city}` : (locality || city);
+      const full = locality && city && locality !== city ? `${locality}, ${city}` : locality || city;
       return { area, city: city || 'Ahmedabad', fullAddress: full };
     }
   } catch {}
@@ -128,7 +341,7 @@ async function resolveLocationDetails(latitude, longitude) {
       const locality = a.street || a.subregion || a.district || validName || '';
       const city = a.city || a.subregion || a.region || '';
       const area = locality || city || 'Current Location';
-      const full = locality && city && locality !== city ? `${locality}, ${city}` : (locality || city);
+      const full = locality && city && locality !== city ? `${locality}, ${city}` : locality || city;
       return { area, city: city || 'Ahmedabad', fullAddress: full };
     }
   } catch {}
@@ -137,7 +350,7 @@ async function resolveLocationDetails(latitude, longitude) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function MapScreen({ navigation }) {
+export default function MapScreen({ route, navigation }) {
   const cameraRef = useRef(null);
 
   const [from, setFrom] = useState('');
@@ -151,12 +364,18 @@ export default function MapScreen({ navigation }) {
   const [loading,    setLoading]    = useState(false);
   const [locGranted, setLocGranted] = useState(false);
   const [liveLocationName, setLiveLocationName] = useState('CURRENT GPS');
-  const [userCity,         setUserCity]         = useState('Bengaluru');
+  const [userCity,         setUserCity]         = useState('Ahmedabad');
   const [userCoords,       setUserCoords]       = useState(null); // { lat, lng }
   const [isFromCurrentLoc, setIsFromCurrentLoc] = useState(true);
 
-  // Bangalore centre default
-  const [centerCoord, setCenterCoord] = useState([77.5946, 12.9716]); // [lng, lat]
+  // Dynamic Autocomplete Suggestions State
+  const [suggestions, setSuggestions] = useState([]);
+  const [activeSearchField, setActiveSearchField] = useState(null); // 'from' | 'to' | null
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const debounceTimerRef = useRef(null);
+
+  // Default center
+  const [centerCoord, setCenterCoord] = useState([72.5714, 23.0225]); // [lng, lat] (Ahmedabad / user city)
 
   // ── Request location & reverse geocode live position ────────────────────────
   useEffect(() => {
@@ -196,7 +415,9 @@ export default function MapScreen({ navigation }) {
             const resolved = await resolveLocationDetails(latitude, longitude);
             setLiveLocationName(resolved.area);
             setUserCity(resolved.city);
-            setFrom(resolved.fullAddress);
+            if (!from) {
+              setFrom(resolved.fullAddress);
+            }
           }
         } catch (err) {
           console.warn('Live map GPS reverse geocode error:', err);
@@ -205,30 +426,140 @@ export default function MapScreen({ navigation }) {
     })();
   }, []);
 
-  // ── Find route ──────────────────────────────────────────────────────────────
-  async function findRoute(destOverride) {
+  // ── Auto-route if navigated with parameters (from Search or RideDetails) ────
+  useEffect(() => {
+    if (route?.params?.pickup || route?.params?.destination) {
+      const p = route.params.pickup;
+      const d = route.params.destination;
+      if (p) {
+        setFrom(p);
+        setIsFromCurrentLoc(false);
+      }
+      if (d) {
+        setTo(d);
+      }
+      if (p && d) {
+        const timer = setTimeout(() => {
+          findRoute(d, null, null, p);
+        }, 600);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [route?.params]);
+
+  // ── Autocomplete search handler ─────────────────────────────────────────────
+  const handleSearchTextChange = (text, field) => {
+    setActiveSearchField(field);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
+    if (!text || text.trim().length < 2) {
+      setSuggestions([]);
+      setLoadingSuggestions(false);
+      return;
+    }
+
+    setLoadingSuggestions(true);
+    debounceTimerRef.current = setTimeout(async () => {
+      const baseCoordsObj = userCoords || { lat: centerCoord[1], lng: centerCoord[0] };
+      const results = await fetchDynamicSuggestions(text, baseCoordsObj, userCity);
+      setSuggestions(results);
+      setLoadingSuggestions(false);
+    }, 280);
+  };
+
+  const handleSelectSuggestion = (item) => {
+    Keyboard.dismiss();
+    setSuggestions([]);
+
+    if (activeSearchField === 'from') {
+      setFrom(item.title);
+      setFromPin(item.coords);
+      setIsFromCurrentLoc(false);
+      setActiveSearchField(null);
+
+      // If destination already entered, auto-route!
+      if (to.trim()) {
+        findRoute(to, item.coords, null);
+      } else {
+        cameraRef.current?.setCamera({
+          centerCoordinate: [item.coords.lng, item.coords.lat],
+          zoomLevel: 14,
+          animationDuration: 600,
+        });
+      }
+    } else {
+      setTo(item.title);
+      setToPin(item.coords);
+      setActiveSearchField(null);
+
+      // Route to selected destination
+      findRoute(item.title, null, item.coords);
+    }
+  };
+
+  // ── Tap-on-Map to set Destination ───────────────────────────────────────────
+  const handleMapPress = async (feature) => {
+    Keyboard.dismiss();
+    setSuggestions([]);
+    setActiveSearchField(null);
+
+    const coords = feature?.geometry?.coordinates;
+    if (!coords || coords.length < 2) return;
+    const [lng, lat] = coords;
+
+    const destCoord = { lat, lng };
+    setToPin(destCoord);
+
+    // Reverse geocode tapped position
+    try {
+      const resolved = await resolveLocationDetails(lat, lng);
+      const destName = resolved.area || resolved.fullAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      setTo(destName);
+
+      const baseFrom = (from || liveLocationName || '').trim();
+      if (baseFrom) {
+        findRoute(destName, null, destCoord);
+      }
+    } catch {
+      setTo(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    }
+  };
+
+  // ── Find route (Dynamic resolving) ──────────────────────────────────────────
+  async function findRoute(destOverride, fromCoordOverride, toCoordOverride, fromTextOverride) {
     const targetTo = (typeof destOverride === 'string' ? destOverride : to).trim();
-    if (!from.trim() || !targetTo) {
+    const targetFrom = (fromTextOverride || from || liveLocationName || '').trim();
+
+    if (!targetFrom || !targetTo) {
       Alert.alert('Missing Location', 'Please enter both pickup and destination locations.');
       return;
     }
     Keyboard.dismiss();
+    setSuggestions([]);
+    setActiveSearchField(null);
     setLoading(true);
     setRouteGeoJSON(null);
     setRouteInfo(null);
+
     try {
       const baseCoordsObj = userCoords || { lat: centerCoord[1], lng: centerCoord[0] };
 
-      // If pickup is user's current GPS location, use exact GPS coordinates directly!
-      // This guarantees zero drift and aligns the route with user's blue dot.
-      const fromCoordPromise = (isFromCurrentLoc && userCoords)
-        ? Promise.resolve(userCoords)
-        : geocode(from, baseCoordsObj, userCity);
+      // Resolve From Coordinate
+      let fromCoord = fromCoordOverride;
+      if (!fromCoord) {
+        if (isFromCurrentLoc && userCoords && !fromTextOverride) {
+          fromCoord = userCoords;
+        } else {
+          fromCoord = await geocode(targetFrom, baseCoordsObj, userCity);
+        }
+      }
 
-      const [fromCoord, toCoord] = await Promise.all([
-        fromCoordPromise,
-        geocode(targetTo, baseCoordsObj, userCity),
-      ]);
+      // Resolve To Coordinate
+      let toCoord = toCoordOverride;
+      if (!toCoord) {
+        toCoord = await geocode(targetTo, baseCoordsObj, userCity);
+      }
+
       const route = await getRoute(fromCoord, toCoord);
 
       setFromPin(fromCoord);
@@ -238,13 +569,13 @@ export default function MapScreen({ navigation }) {
 
       // Fly to fit route bounds (ne: [maxLng, maxLat], sw: [minLng, minLat])
       const coords = route.geojson.features[0].geometry.coordinates;
-      const lngs = coords.map(c => c[0]);
-      const lats = coords.map(c => c[1]);
+      const lngs = coords.map((c) => c[0]);
+      const lats = coords.map((c) => c[1]);
       cameraRef.current?.fitBounds(
         [Math.max(...lngs), Math.max(...lats)],
         [Math.min(...lngs), Math.min(...lats)],
-        70,   // padding px
-        800,  // animation ms
+        70, // padding px
+        800 // animation ms
       );
     } catch (err) {
       Alert.alert('Route Search Error', err.message || 'Could not find a route between the specified locations.');
@@ -259,6 +590,8 @@ export default function MapScreen({ navigation }) {
     setFromPin(null);
     setToPin(null);
     setTo('');
+    setSuggestions([]);
+    setActiveSearchField(null);
   }
 
   async function centreOnMe() {
@@ -321,6 +654,7 @@ export default function MapScreen({ navigation }) {
         attributionEnabled
         compassEnabled
         attributionPosition={{ bottom: 8, right: 8 }}
+        onPress={handleMapPress}
       >
         <Camera
           ref={cameraRef}
@@ -423,87 +757,172 @@ export default function MapScreen({ navigation }) {
               <Ionicons name="arrow-back" size={20} color={colors.text} />
             </TouchableOpacity>
           ) : null}
-          <View style={[styles.searchCard, { flex: 1 }]}>
-          {/* From */}
-          <View style={styles.inputRow}>
-            <View style={[styles.inputDot, { backgroundColor: colors.brown }]} />
-            <TextInput
-              style={styles.input}
-              value={from}
-              onChangeText={(text) => {
-                setFrom(text);
-                setIsFromCurrentLoc(false);
-              }}
-              placeholder="Pickup — current GPS location"
-              placeholderTextColor={colors.muted}
-              returnKeyType="next"
-            />
-            <TouchableOpacity
-              style={styles.currentLocPill}
-              onPress={centreOnMe}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="locate" size={12} color={colors.brown} />
-              <Text style={styles.currentLocPillText}>Current</Text>
-            </TouchableOpacity>
-          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.searchCard}>
+              {/* From */}
+              <View style={styles.inputRow}>
+                <View style={[styles.inputDot, { backgroundColor: colors.brown }]} />
+                <TextInput
+                  style={styles.input}
+                  value={from}
+                  onChangeText={(text) => {
+                    setFrom(text);
+                    setIsFromCurrentLoc(false);
+                    handleSearchTextChange(text, 'from');
+                  }}
+                  onFocus={() => {
+                    setActiveSearchField('from');
+                    if (from.length >= 2) handleSearchTextChange(from, 'from');
+                  }}
+                  placeholder="Pickup — current GPS location"
+                  placeholderTextColor={colors.muted}
+                  returnKeyType="search"
+                  onSubmitEditing={() => findRoute()}
+                />
+                <TouchableOpacity
+                  style={styles.currentLocPill}
+                  onPress={centreOnMe}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="locate" size={12} color={colors.brown} />
+                  <Text style={styles.currentLocPillText}>Current</Text>
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.inputDivider} />
+              <View style={styles.inputDivider} />
 
-          {/* To (always visible for easy navigation) */}
-          <View style={styles.inputRow}>
-            <View style={[styles.inputDot, { backgroundColor: colors.amber }]} />
-            <TextInput
-              style={styles.input}
-              value={to}
-              onChangeText={setTo}
-              placeholder="To — destination (e.g. Gota, SG Highway)"
-              placeholderTextColor={colors.muted}
-              returnKeyType="search"
-              onSubmitEditing={() => findRoute()}
-            />
-            {to.length > 0 && (
-              <TouchableOpacity onPress={clearRoute} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close-circle" size={18} color={colors.muted} />
+              {/* To (always visible for easy navigation) */}
+              <View style={styles.inputRow}>
+                <View style={[styles.inputDot, { backgroundColor: colors.amber }]} />
+                <TextInput
+                  style={styles.input}
+                  value={to}
+                  onChangeText={(text) => {
+                    setTo(text);
+                    handleSearchTextChange(text, 'to');
+                  }}
+                  onFocus={() => {
+                    setActiveSearchField('to');
+                    if (to.length >= 2) handleSearchTextChange(to, 'to');
+                  }}
+                  placeholder="To — dynamic place, landmark, or address"
+                  placeholderTextColor={colors.muted}
+                  returnKeyType="search"
+                  onSubmitEditing={() => findRoute()}
+                />
+                {to.length > 0 && (
+                  <TouchableOpacity onPress={clearRoute} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="close-circle" size={18} color={colors.muted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Destination Quick Chips (dynamic per user's city) */}
+              <View style={styles.chipRow}>
+                {getCorridorChips().map(chip => (
+                  <TouchableOpacity
+                    key={chip}
+                    style={[styles.quickChip, to === chip && styles.quickChipActive]}
+                    onPress={() => {
+                      setTo(chip);
+                      findRoute(chip);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.quickChipText, to === chip && styles.quickChipTextActive]}>{chip}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* CTA button */}
+              <TouchableOpacity
+                style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
+                onPress={() => findRoute()}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <Ionicons name="navigate-outline" size={16} color="#FFFFFF" />
+                }
+                <Text style={styles.ctaText}>
+                  {loading ? 'Finding route…' : 'Get Route & ETA'}
+                </Text>
               </TouchableOpacity>
+            </View>
+
+            {/* Dynamic Autocomplete Suggestions Dropdown */}
+            {activeSearchField && (suggestions.length > 0 || loadingSuggestions) && (
+              <View style={styles.suggestionsCard}>
+                <View style={styles.suggestionsHeader}>
+                  <Text style={styles.suggestionsHeaderText}>
+                    {activeSearchField === 'from' ? 'PICKUP SUGGESTIONS' : 'DESTINATION SUGGESTIONS'}
+                  </Text>
+                  {loadingSuggestions ? (
+                    <ActivityIndicator size="small" color={colors.brown} />
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSuggestions([]);
+                        setActiveSearchField(null);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close" size={16} color={colors.muted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  style={styles.suggestionsList}
+                  nestedScrollEnabled
+                >
+                  {suggestions.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.suggestionItem}
+                      onPress={() => handleSelectSuggestion(item)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.suggestionIconWrap}>
+                        <Ionicons
+                          name={activeSearchField === 'from' ? 'location-outline' : 'flag-outline'}
+                          size={15}
+                          color={activeSearchField === 'from' ? colors.brown : colors.amber}
+                        />
+                      </View>
+                      <View style={styles.suggestionTextWrap}>
+                        <Text style={styles.suggestionTitle} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        {item.subtitle ? (
+                          <Text style={styles.suggestionSubtitle} numberOfLines={1}>
+                            {item.subtitle}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {item.dist != null ? (
+                        <Text style={styles.suggestionDist}>
+                          {item.dist < 1 ? `${Math.round(item.dist * 1000)}m` : `${item.dist.toFixed(1)}km`}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
             )}
           </View>
-
-          {/* Destination Quick Chips (dynamic per user's city) */}
-          <View style={styles.chipRow}>
-            {getCorridorChips().map(chip => (
-              <TouchableOpacity
-                key={chip}
-                style={[styles.quickChip, to === chip && styles.quickChipActive]}
-                onPress={() => {
-                  setTo(chip);
-                  findRoute(chip);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.quickChipText, to === chip && styles.quickChipTextActive]}>{chip}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* CTA button */}
-          <TouchableOpacity
-            style={[styles.ctaBtn, loading && styles.ctaBtnDisabled]}
-            onPress={() => findRoute()}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading
-              ? <ActivityIndicator size="small" color="#FFFFFF" />
-              : <Ionicons name="navigate-outline" size={16} color="#FFFFFF" />
-            }
-            <Text style={styles.ctaText}>
-              {loading ? 'Finding route…' : 'Get Route & ETA'}
-            </Text>
-          </TouchableOpacity>
-        </View>
         </View>
       </SafeAreaView>
+
+      {/* ── Tap-on-map hint pill ── */}
+      {!routeInfo && !activeSearchField && (
+        <View style={styles.mapTapHint} pointerEvents="none">
+          <Ionicons name="finger-print-outline" size={14} color={colors.brown} />
+          <Text style={styles.mapTapHintText}>Tap anywhere on map to set destination</Text>
+        </View>
+      )}
 
       {/* ── Live Trip Bottom Sheet HUD (Req 14) ── */}
       {routeInfo && (
@@ -819,4 +1238,102 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '500' },
+
+  // Autocomplete Suggestions Dropdown
+  suggestionsCard: {
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    elevation: 12,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    borderWidth: 1,
+    borderColor: colors.line,
+    maxHeight: 230,
+  },
+  suggestionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 6,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  suggestionsHeaderText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 0.5,
+  },
+  suggestionsList: {
+    maxHeight: 180,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line,
+  },
+  suggestionIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.panelSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  suggestionTextWrap: {
+    flex: 1,
+  },
+  suggestionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  suggestionSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  suggestionDist: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.muted,
+    marginLeft: 6,
+  },
+
+  // Map Tap Hint Tooltip
+  mapTapHint: {
+    position: 'absolute',
+    bottom: 24,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.line,
+    elevation: 4,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  mapTapHintText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.text,
+  },
 });
+

@@ -199,7 +199,12 @@ export default function SearchRidesScreen({ navigation }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <TouchableOpacity
               style={styles.mapToggleBtn}
-              onPress={() => navigation.navigate('Map')}
+              onPress={() =>
+                navigation.navigate('Map', {
+                  pickup: pickupLocation,
+                  destination: destination,
+                })
+              }
             >
               <Ionicons name="map-outline" size={14} color={colors.blue} />
               <Text style={styles.mapToggleText}>View Map</Text>
