@@ -47,6 +47,28 @@ export function AuthProvider({ children }) {
     await AsyncStorage.multiSet(entries);
   }
 
+  async function resolveUserWithCommute(rawUser, fallbackUser = null) {
+    if (!rawUser) return null;
+    const userKey = rawUser.id || rawUser.email;
+    let localHome = '';
+    let localOffice = '';
+    if (userKey) {
+      try {
+        const [savedHome, savedOffice] = await AsyncStorage.multiGet([
+          `@ecoride_home_${userKey}`,
+          `@ecoride_office_${userKey}`,
+        ]);
+        localHome = savedHome[1] || '';
+        localOffice = savedOffice[1] || '';
+      } catch {}
+    }
+    return {
+      ...rawUser,
+      homeAddress: rawUser.homeAddress || localHome || fallbackUser?.homeAddress || '',
+      officeAddress: rawUser.officeAddress || localOffice || fallbackUser?.officeAddress || '',
+    };
+  }
+
   async function silentSync() {
     try {
       const storedToken = await AsyncStorage.getItem(STORAGE_KEYS.token);
@@ -54,8 +76,9 @@ export function AuthProvider({ children }) {
 
       const freshUser = await userApi.me();
       if (freshUser) {
-        setUser(freshUser);
-        await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(freshUser));
+        const merged = await resolveUserWithCommute(freshUser, user);
+        setUser(merged);
+        await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(merged));
       }
     } catch (error) {
       // If 401, token expired — attempt silent re-auth
@@ -124,10 +147,11 @@ export function AuthProvider({ children }) {
             .me()
             .then(async (freshUser) => {
               if (freshUser) {
-                setUser(freshUser);
+                const merged = await resolveUserWithCommute(freshUser, storedUser);
+                setUser(merged);
                 await AsyncStorage.setItem(
                   STORAGE_KEYS.user,
-                  JSON.stringify(freshUser)
+                  JSON.stringify(merged)
                 );
               }
             })
@@ -173,12 +197,19 @@ export function AuthProvider({ children }) {
 
   async function login(email, password) {
     const result = await authApi.login({ email, password });
-    await persistSession(result.token, result.user, { email, password });
+    const resolvedUser = await resolveUserWithCommute(result.user, null);
+    await persistSession(result.token, resolvedUser, { email, password });
   }
 
   async function register(payload) {
     const result = await authApi.register(payload);
-    await persistSession(result.token, result.user, {
+    // Newly registered accounts start clean without inherited commute locations
+    const newUser = {
+      ...result.user,
+      homeAddress: result.user?.homeAddress || '',
+      officeAddress: result.user?.officeAddress || '',
+    };
+    await persistSession(result.token, newUser, {
       email: payload.email,
       password: payload.password,
     });
@@ -187,15 +218,33 @@ export function AuthProvider({ children }) {
   async function refreshMe() {
     if (MOCK_MODE) return user;
     const freshUser = await userApi.me();
-    setUser(freshUser);
-    await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(freshUser));
-    return freshUser;
+    if (freshUser) {
+      const merged = await resolveUserWithCommute(freshUser, user);
+      setUser(merged);
+      await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(merged));
+      return merged;
+    }
+    return user;
   }
 
   async function updateUserProfile(updates) {
     const merged = { ...user, ...updates };
     setUser(merged);
     await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(merged));
+
+    const userKey = merged?.id || merged?.email;
+    if (userKey) {
+      const entries = [];
+      if (updates.homeAddress !== undefined) {
+        entries.push([`@ecoride_home_${userKey}`, updates.homeAddress || '']);
+      }
+      if (updates.officeAddress !== undefined) {
+        entries.push([`@ecoride_office_${userKey}`, updates.officeAddress || '']);
+      }
+      if (entries.length > 0) {
+        await AsyncStorage.multiSet(entries).catch(() => {});
+      }
+    }
     return merged;
   }
 

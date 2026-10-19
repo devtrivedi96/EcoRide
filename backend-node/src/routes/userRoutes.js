@@ -53,20 +53,12 @@ router.put('/profile', authenticate, async (req, res, next) => {
     // Also auto-sync to saved places if homeAddress or officeAddress is updated
     if (homeAddress) {
       try {
-        const existing = await savedLocationService.getSavedLocations(req.user.email);
-        const homeLoc = existing.find(l => (l.name || '').toLowerCase() === 'home');
-        if (!homeLoc) {
-          await savedLocationService.addSavedLocation(req.user.email, { name: 'Home', address: homeAddress });
-        }
+        await savedLocationService.addSavedLocation(req.user.email, { name: 'Home', address: homeAddress });
       } catch {}
     }
     if (officeAddress) {
       try {
-        const existing = await savedLocationService.getSavedLocations(req.user.email);
-        const officeLoc = existing.find(l => (l.name || '').toLowerCase() === 'office');
-        if (!officeLoc) {
-          await savedLocationService.addSavedLocation(req.user.email, { name: 'Office', address: officeAddress });
-        }
+        await savedLocationService.addSavedLocation(req.user.email, { name: 'Office', address: officeAddress });
       } catch {}
     }
 

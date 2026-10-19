@@ -10,6 +10,13 @@ async function getSavedLocations(userEmail) {
 async function addSavedLocation(userEmail, body) {
   const user = await findOne(COLLECTIONS.USERS, 'email', userEmail);
   if (!user) throw new Error('User not found');
+  const existing = await findAll(COLLECTIONS.SAVED_LOCATIONS, [['userId', '==', user.id]]);
+  const targetName = (body.name || '').trim().toLowerCase();
+  for (const item of existing) {
+    if ((item.name || '').trim().toLowerCase() === targetName) {
+      await remove(COLLECTIONS.SAVED_LOCATIONS, item.id).catch(() => {});
+    }
+  }
   const loc = await create(COLLECTIONS.SAVED_LOCATIONS, { userId: user.id, name: body.name, address: body.address });
   return mapDto(loc);
 }

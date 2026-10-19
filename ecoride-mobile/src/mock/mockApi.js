@@ -41,14 +41,24 @@ export const mockAuthApi = {
   resetPassword: async () => { await delay(); return { message: 'Password reset (mock).' }; },
 };
 
-// ─── User ─────────────────────────────────────────────────────────────────────
+let mockSavedPlaces = [];
+
 export const mockUserApi = {
   me: async () => { await delay(200); return MOCK_USER; },
   updateProfile: async (payload) => { await delay(200); Object.assign(MOCK_USER, payload); return MOCK_USER; },
   resetPassword: async () => { await delay(); return { message: 'Password updated (mock).' }; },
-  savedPlaces: async () => { await delay(); return []; },
-  addSavedPlace: async (p) => { await delay(); return { id: `sp-${Date.now()}`, ...p }; },
-  deleteSavedPlace: async () => { await delay(); },
+  savedPlaces: async () => { await delay(); return [...mockSavedPlaces]; },
+  addSavedPlace: async (p) => {
+    await delay();
+    mockSavedPlaces = mockSavedPlaces.filter((item) => (item.name || '').toLowerCase() !== (p.name || '').toLowerCase());
+    const newPlace = { id: `sp-${Date.now()}`, ...p };
+    mockSavedPlaces.push(newPlace);
+    return newPlace;
+  },
+  deleteSavedPlace: async (id) => {
+    await delay();
+    mockSavedPlaces = mockSavedPlaces.filter((p) => p.id !== id);
+  },
 };
 
 // ─── Rides ────────────────────────────────────────────────────────────────────

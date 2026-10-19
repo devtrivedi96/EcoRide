@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { userApi } from '../../api/userApi';
 import Badge from '../../components/Badge';
 import Button from '../../components/Button';
@@ -47,29 +48,66 @@ export default function ProfileScreen({ navigation }) {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
         phoneNumber: user.phoneNumber || '',
-        homeAddress: user.homeAddress || 'Koramangala 4th Block, Bengaluru',
-        officeAddress: user.officeAddress || 'Electronic City Phase 1, Bengaluru',
+        homeAddress: user.homeAddress || '',
+        officeAddress: user.officeAddress || '',
       });
     }
   }, [user]);
 
-  // Load saved places on mount to supplement addresses
+  // Load saved places & account cache on mount to supplement addresses
   useEffect(() => {
+    let isMounted = true;
     (async () => {
       try {
-        const places = await userApi.savedPlaces();
+        const userKey = user?.id || user?.email;
+        let localHome = '';
+        let localOffice = '';
+        if (userKey) {
+          const [h, o] = await AsyncStorage.multiGet([
+            `@ecoride_home_${userKey}`,
+            `@ecoride_office_${userKey}`,
+          ]);
+          localHome = h[1] || '';
+          localOffice = o[1] || '';
+        }
+
+        const places = await userApi.savedPlaces().catch(() => []);
+        let serverHome = '';
+        let serverOffice = '';
         if (Array.isArray(places) && places.length > 0) {
-          const home = places.find((p) => (p.name || '').toLowerCase() === 'home');
-          const office = places.find((p) => (p.name || '').toLowerCase() === 'office');
+          const homePlaces = places.filter((p) => (p.name || '').toLowerCase() === 'home');
+          const officePlaces = places.filter((p) => (p.name || '').toLowerCase() === 'office');
+          serverHome = homePlaces[homePlaces.length - 1]?.address || '';
+          serverOffice = officePlaces[officePlaces.length - 1]?.address || '';
+        }
+
+        const resolvedHome = user?.homeAddress || serverHome || localHome || '';
+        const resolvedOffice = user?.officeAddress || serverOffice || localOffice || '';
+
+        if (isMounted) {
           setEditForm((prev) => ({
             ...prev,
-            homeAddress: prev.homeAddress || home?.address || '',
-            officeAddress: prev.officeAddress || office?.address || '',
+            homeAddress: resolvedHome,
+            officeAddress: resolvedOffice,
           }));
+        }
+
+        if (
+          user &&
+          (resolvedHome !== user.homeAddress || resolvedOffice !== user.officeAddress) &&
+          (resolvedHome || resolvedOffice)
+        ) {
+          updateUserProfile({
+            homeAddress: resolvedHome,
+            officeAddress: resolvedOffice,
+          }).catch(() => {});
         }
       } catch {}
     })();
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, user?.email]);
 
   async function handleUseGpsForHome() {
     setDetectingGps(true);
@@ -104,17 +142,32 @@ export default function ProfileScreen({ navigation }) {
       };
 
       // 1. Update backend profile
-      await userApi.updateProfile(payload).catch(() => {});
+      await userApi.updateProfile(payload).catch((err) => {
+        console.warn('Backend updateProfile notice:', err?.message);
+      });
 
-      // 2. Update AuthContext & persistent AsyncStorage
+      // 2. Update AuthContext & persistent AsyncStorage (account-scoped)
       await updateUserProfile(payload);
 
-      // 3. Sync to saved-places table for quick corridors
-      if (payload.homeAddress) {
-        await userApi.addSavedPlace({ name: 'Home', address: payload.homeAddress }).catch(() => {});
-      }
-      if (payload.officeAddress) {
-        await userApi.addSavedPlace({ name: 'Office', address: payload.officeAddress }).catch(() => {});
+      // 3. Sync to saved-places table: purge old entries for Home and Office so stale duplicates don't linger
+      try {
+        const existingPlaces = await userApi.savedPlaces().catch(() => []);
+        if (Array.isArray(existingPlaces)) {
+          for (const p of existingPlaces) {
+            const nameLower = (p.name || '').toLowerCase();
+            if ((nameLower === 'home' || nameLower === 'office') && p.id) {
+              await userApi.deleteSavedPlace(p.id).catch(() => {});
+            }
+          }
+        }
+        if (payload.homeAddress) {
+          await userApi.addSavedPlace({ name: 'Home', address: payload.homeAddress }).catch(() => {});
+        }
+        if (payload.officeAddress) {
+          await userApi.addSavedPlace({ name: 'Office', address: payload.officeAddress }).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('Saved places sync notice:', err?.message);
       }
 
       setIsEditing(false);
@@ -146,7 +199,39 @@ export default function ProfileScreen({ navigation }) {
 
   async function handleRefresh() {
     try {
-      await refreshMe();
+      const fresh = await refreshMe();
+
+      let resolvedHome = fresh?.homeAddress || '';
+      let resolvedOffice = fresh?.officeAddress || '';
+
+      try {
+        const places = await userApi.savedPlaces();
+        if (Array.isArray(places) && places.length > 0) {
+          const homePlaces = places.filter((p) => (p.name || '').toLowerCase() === 'home');
+          const officePlaces = places.filter((p) => (p.name || '').toLowerCase() === 'office');
+          const lastHome = homePlaces[homePlaces.length - 1]?.address;
+          const lastOffice = officePlaces[officePlaces.length - 1]?.address;
+
+          if (lastHome) resolvedHome = lastHome;
+          if (lastOffice) resolvedOffice = lastOffice;
+        }
+      } catch {}
+
+      setEditForm({
+        firstName: fresh?.firstName || '',
+        lastName: fresh?.lastName || '',
+        phoneNumber: fresh?.phoneNumber || '',
+        homeAddress: resolvedHome,
+        officeAddress: resolvedOffice,
+      });
+
+      if (resolvedHome !== fresh?.homeAddress || resolvedOffice !== fresh?.officeAddress) {
+        await updateUserProfile({
+          homeAddress: resolvedHome,
+          officeAddress: resolvedOffice,
+        });
+      }
+
       Alert.alert('Profile Refreshed', 'Your account data is up to date.');
     } catch (error) {
       Alert.alert('Refresh failed', getErrorMessage(error));
@@ -312,10 +397,23 @@ export default function ProfileScreen({ navigation }) {
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={styles.placeTitle}>Home</Text>
-              <Badge label="Primary" variant="neutral" size="sm" />
+              <Badge
+                label={editForm.homeAddress || user?.homeAddress ? 'Primary' : 'Not Set'}
+                variant={editForm.homeAddress || user?.homeAddress ? 'neutral' : 'warning'}
+                size="sm"
+              />
             </View>
-            <Text style={styles.placeSub} numberOfLines={2}>
-              {user?.homeAddress || editForm.homeAddress || 'Tap to set your home address'}
+            <Text
+              style={[
+                styles.placeSub,
+                !(editForm.homeAddress || user?.homeAddress) && {
+                  color: colors.muted,
+                  fontStyle: 'italic',
+                },
+              ]}
+              numberOfLines={2}
+            >
+              {editForm.homeAddress || user?.homeAddress || 'Not set • Tap to add Home location'}
             </Text>
           </View>
           <Ionicons name="pencil-outline" size={16} color={colors.muted} />
@@ -333,10 +431,23 @@ export default function ProfileScreen({ navigation }) {
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={styles.placeTitle}>Office / Workplace</Text>
-              <Badge label="Workplace" variant="neutral" size="sm" />
+              <Badge
+                label={editForm.officeAddress || user?.officeAddress ? 'Workplace' : 'Not Set'}
+                variant={editForm.officeAddress || user?.officeAddress ? 'neutral' : 'warning'}
+                size="sm"
+              />
             </View>
-            <Text style={styles.placeSub} numberOfLines={2}>
-              {user?.officeAddress || editForm.officeAddress || 'Tap to set your office address'}
+            <Text
+              style={[
+                styles.placeSub,
+                !(editForm.officeAddress || user?.officeAddress) && {
+                  color: colors.muted,
+                  fontStyle: 'italic',
+                },
+              ]}
+              numberOfLines={2}
+            >
+              {editForm.officeAddress || user?.officeAddress || 'Not set • Tap to add Workplace location'}
             </Text>
           </View>
           <Ionicons name="pencil-outline" size={16} color={colors.muted} />
