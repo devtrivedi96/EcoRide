@@ -70,7 +70,15 @@ export default function TripCard({ trip, actions = [], onPress }) {
               {ride.pickupLocation || 'Pickup location'}
             </Text>
           </View>
-          <View style={[styles.locationItem, { marginTop: 8 }]}>
+          {ride.routeWaypoints ? (
+            <View style={styles.waypointPill}>
+              <Ionicons name="git-commit-outline" size={11} color={colors.blue} />
+              <Text style={styles.waypointPillText} numberOfLines={1}>
+                Via: {ride.routeWaypoints}
+              </Text>
+            </View>
+          ) : null}
+          <View style={[styles.locationItem, { marginTop: 6 }]}>
             <Text style={styles.locationTitle} numberOfLines={1}>
               {ride.destination || 'Destination'}
             </Text>
@@ -271,5 +279,21 @@ const styles = StyleSheet.create({
   actionBtn: {
     flexGrow: 1,
     minWidth: 100,
+  },
+  waypointPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginVertical: 4,
+  },
+  waypointPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
 });

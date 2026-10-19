@@ -17,6 +17,7 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Field from '../../components/Field';
 import Screen from '../../components/Screen';
+import MiniRouteMap from '../../components/MiniRouteMap';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { colors, spacing } from '../../utils/theme';
@@ -209,6 +210,13 @@ export default function PublishRideScreen({ route, navigation }) {
 
   // ── SCREEN 12: RIDE PUBLISHED SCREEN ─────────────────────────────────────────
   if (publishedRide) {
+    const waypointsList = form.routeWaypoints
+      ? form.routeWaypoints
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
     return (
       <Screen contentStyle={styles.publishedContent}>
         <View style={styles.successCircle}>
@@ -226,10 +234,40 @@ export default function PublishRideScreen({ route, navigation }) {
             <Text style={styles.fareHighlight}>{currency(form.farePerSeat)} / seat</Text>
           </View>
 
-          <View style={styles.routeBox}>
-            <Text style={styles.routeLocation}>{form.pickupLocation}</Text>
-            <Ionicons name="arrow-down" size={16} color={colors.green} style={{ marginVertical: 4 }} />
-            <Text style={styles.routeLocation}>{form.destination}</Text>
+          {/* Detailed Route Wayout Points (Req: Written wayout points) */}
+          <View style={styles.routeTimelineWrap}>
+            <Text style={styles.routeSectionTitle}>Route Stops & Wayout Points</Text>
+
+            {/* Pickup */}
+            <View style={styles.routeItemRow}>
+              <View style={[styles.timelineDot, { backgroundColor: colors.green }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.routePointLabel}>ORIGIN / PICKUP</Text>
+                <Text style={styles.routePointName}>{form.pickupLocation}</Text>
+              </View>
+            </View>
+
+            {/* Intermediate Wayout Points */}
+            {waypointsList.map((wp, idx) => (
+              <View key={`wp-${idx}`} style={styles.routeItemRow}>
+                <View style={[styles.timelineDot, styles.timelineDotWaypoint]}>
+                  <Text style={styles.waypointNum}>{idx + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.routePointLabel}>WAYOUT POINT {idx + 1}</Text>
+                  <Text style={styles.routePointName}>{wp}</Text>
+                </View>
+              </View>
+            ))}
+
+            {/* Destination */}
+            <View style={styles.routeItemRow}>
+              <View style={[styles.timelineDot, { backgroundColor: colors.amber }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.routePointLabel}>FINAL DESTINATION</Text>
+                <Text style={styles.routePointName}>{form.destination}</Text>
+              </View>
+            </View>
           </View>
 
           <View style={styles.summaryMetaRow}>
@@ -242,9 +280,46 @@ export default function PublishRideScreen({ route, navigation }) {
               <Text style={styles.metaVal}>{form.availableSeats} seats</Text>
             </View>
           </View>
+
+          {/* Little Map at bottom of published ride (Req: little map in down) */}
+          <View style={{ marginTop: 12 }}>
+            <View style={styles.mapHeaderRow}>
+              <Text style={styles.routeSectionTitle}>Route Map & Live Tracking</Text>
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate('Map', {
+                    pickup: form.pickupLocation,
+                    destination: form.destination,
+                  })
+                }
+              >
+                <Text style={styles.expandLinkText}>Full Map ↗</Text>
+              </TouchableOpacity>
+            </View>
+            <MiniRouteMap
+              pickup={form.pickupLocation}
+              destination={form.destination}
+              waypoints={form.routeWaypoints}
+              height={175}
+              navigation={navigation}
+              style={{ marginTop: 6 }}
+            />
+          </View>
         </Card>
 
         <View style={styles.publishedActions}>
+          <Button
+            title="Explore Live Route Map"
+            variant="outline"
+            icon="map-outline"
+            size="lg"
+            onPress={() =>
+              navigation.navigate('Map', {
+                pickup: form.pickupLocation,
+                destination: form.destination,
+              })
+            }
+          />
           <Button
             title="Manage Driver Requests"
             icon="people-outline"
@@ -262,6 +337,7 @@ export default function PublishRideScreen({ route, navigation }) {
       </Screen>
     );
   }
+
 
   // ── STEPPER FORM ─────────────────────────────────────────────────────────────
   return (
@@ -641,6 +717,19 @@ export default function PublishRideScreen({ route, navigation }) {
                 : ''}
               {form.availableSeats} seats · {currency(form.farePerSeat)} per seat
             </Text>
+          </View>
+
+          {/* Mini Route Map Preview in Step 5 Review */}
+          <View style={{ marginTop: 6 }}>
+            <Text style={styles.reviewSecTitle}>Route Map Preview</Text>
+            <MiniRouteMap
+              pickup={form.pickupLocation}
+              destination={form.destination}
+              waypoints={form.routeWaypoints}
+              height={140}
+              navigation={navigation}
+              style={{ marginTop: 6 }}
+            />
           </View>
         </Card>
       )}
@@ -1060,4 +1149,66 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 8,
   },
+  routeTimelineWrap: {
+    backgroundColor: colors.panelSoft,
+    padding: 12,
+    borderRadius: spacing.radiusSm,
+    marginVertical: 4,
+    gap: 10,
+  },
+  routeSectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  routeItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  timelineDotWaypoint: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  waypointNum: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  routePointLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 0.5,
+  },
+  routePointName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 1,
+  },
+  mapHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  expandLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.green,
+  },
 });
+

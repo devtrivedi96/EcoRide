@@ -4,6 +4,7 @@ import { mockUserApi } from '../mock/mockApi';
 
 const realUserApi = {
   me: () => api.get('/users/me').then((res) => res.data),
+  updateProfile: (payload) => api.put('/users/profile', payload).then((res) => res.data),
   resetPassword: (newPassword) => api.put('/users/reset-password', { newPassword }).then((res) => res.data),
   savedPlaces: () => api.get('/users/saved-places').then((res) => res.data),
   addSavedPlace: (payload) => api.post('/users/saved-places', payload).then((res) => res.data),
@@ -11,3 +12,4 @@ const realUserApi = {
 };
 
 export const userApi = MOCK_MODE ? mockUserApi : realUserApi;
+

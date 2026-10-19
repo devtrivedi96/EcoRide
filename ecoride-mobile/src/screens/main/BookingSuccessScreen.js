@@ -1,9 +1,10 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Screen from '../../components/Screen';
+import MiniRouteMap from '../../components/MiniRouteMap';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime } from '../../utils/format';
 
@@ -12,6 +13,10 @@ export default function BookingSuccessScreen({ route, navigation }) {
 
   const pickup = ride?.pickupLocation || trip?.ride?.pickupLocation || 'Pickup location';
   const destination = ride?.destination || trip?.ride?.destination || 'Destination';
+  const rawWaypoints = ride?.routeWaypoints || trip?.ride?.routeWaypoints || '';
+  const waypointsList = rawWaypoints
+    ? rawWaypoints.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
   const departureTime = ride?.departureTime || trip?.ride?.departureTime;
   const totalFare = trip?.totalFare || ((ride?.farePerSeat || 0) * bookedSeats);
 
@@ -34,11 +39,17 @@ export default function BookingSuccessScreen({ route, navigation }) {
           <Text style={styles.statusBadgeText}>REQUEST CONFIRMED</Text>
         </View>
 
-        {/* Route Details */}
+        {/* Route Details with Written Wayout Points */}
         <View style={styles.routeContainer}>
           <View style={styles.routeVisual}>
             <View style={[styles.dot, styles.pickupDot]} />
             <View style={styles.timelineLine} />
+            {waypointsList.map((_, i) => (
+              <React.Fragment key={`dot-${i}`}>
+                <View style={[styles.dot, styles.waypointDot]} />
+                <View style={styles.timelineLine} />
+              </React.Fragment>
+            ))}
             <View style={[styles.dot, styles.dropDot]} />
           </View>
 
@@ -48,7 +59,18 @@ export default function BookingSuccessScreen({ route, navigation }) {
               <Text style={styles.locationSub}>Pickup Point</Text>
             </View>
 
-            <View style={{ marginTop: 16 }}>
+            {/* Written Wayout Points */}
+            {waypointsList.map((wp, idx) => (
+              <View key={`wp-${idx}`} style={{ marginTop: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Text style={styles.waypointLabel}>WAYOUT POINT {idx + 1}</Text>
+                </View>
+                <Text style={styles.locationTitle}>{wp}</Text>
+                <Text style={styles.locationSub}>Corridor Stop {idx + 1}</Text>
+              </View>
+            ))}
+
+            <View style={{ marginTop: 12 }}>
               <Text style={styles.locationTitle}>{destination}</Text>
               <Text style={styles.locationSub}>Destination Point</Text>
             </View>
@@ -79,6 +101,31 @@ export default function BookingSuccessScreen({ route, navigation }) {
             <Text style={styles.metaVal}>Pay via Wallet after trip</Text>
           </View>
         </View>
+
+        {/* Mini Route Map on Booked Ride Card (Req: little map in down) */}
+        <View style={{ marginTop: 14 }}>
+          <View style={styles.mapTitleRow}>
+            <Text style={styles.mapTitleText}>Booked Route Map</Text>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate('Map', {
+                  pickup,
+                  destination,
+                })
+              }
+            >
+              <Text style={styles.mapExpandLink}>Live GPS ↗</Text>
+            </TouchableOpacity>
+          </View>
+          <MiniRouteMap
+            pickup={pickup}
+            destination={destination}
+            waypoints={rawWaypoints}
+            height={175}
+            navigation={navigation}
+            style={{ marginTop: 6 }}
+          />
+        </View>
       </Card>
 
       {/* ── What happens next tips ── */}
@@ -94,6 +141,15 @@ export default function BookingSuccessScreen({ route, navigation }) {
 
       {/* ── Action Buttons ── */}
       <View style={styles.actions}>
+        <Button
+          title="Track Live Route on Map"
+          icon="navigate-outline"
+          variant="outline"
+          size="lg"
+          onPress={() => {
+            navigation.navigate('Map', { pickup, destination });
+          }}
+        />
         <Button
           title="View My Ride"
           icon="ticket-outline"
@@ -193,6 +249,11 @@ const styles = StyleSheet.create({
   pickupDot: {
     backgroundColor: colors.green,
   },
+  waypointDot: {
+    backgroundColor: colors.blue,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
   dropDot: {
     backgroundColor: colors.amber,
   },
@@ -201,6 +262,30 @@ const styles = StyleSheet.create({
     height: 36,
     backgroundColor: colors.lineDark,
     marginVertical: 4,
+  },
+  waypointLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.blue,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  mapTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mapTitleText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  mapExpandLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.green,
   },
   locationDetails: {
     flex: 1,

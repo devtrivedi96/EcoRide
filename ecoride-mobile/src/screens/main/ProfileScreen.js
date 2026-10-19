@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  Modal,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -16,12 +20,111 @@ import Screen from '../../components/Screen';
 import { useAuth } from '../../context/AuthContext';
 import { colors, spacing } from '../../utils/theme';
 import { getErrorMessage, initials } from '../../utils/format';
+import { getCurrentUserAddress } from '../../utils/location';
 
 export default function ProfileScreen({ navigation }) {
-  const { user, refreshMe, logout } = useAuth();
+  const { user, refreshMe, updateUserProfile, logout } = useAuth();
   const [newPassword, setNewPassword] = useState('');
   const [loadingPass, setLoadingPass] = useState(false);
   const [passMsg, setPassMsg] = useState(null);
+
+  // Edit Profile Details State
+  const [isEditing, setIsEditing] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [detectingGps, setDetectingGps] = useState(false);
+  const [editForm, setEditForm] = useState({
+    firstName: '',
+    lastName: '',
+    phoneNumber: '',
+    homeAddress: '',
+    officeAddress: '',
+  });
+
+  // Sync profile details when user loads or updates
+  useEffect(() => {
+    if (user) {
+      setEditForm({
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        phoneNumber: user.phoneNumber || '',
+        homeAddress: user.homeAddress || 'Koramangala 4th Block, Bengaluru',
+        officeAddress: user.officeAddress || 'Electronic City Phase 1, Bengaluru',
+      });
+    }
+  }, [user]);
+
+  // Load saved places on mount to supplement addresses
+  useEffect(() => {
+    (async () => {
+      try {
+        const places = await userApi.savedPlaces();
+        if (Array.isArray(places) && places.length > 0) {
+          const home = places.find((p) => (p.name || '').toLowerCase() === 'home');
+          const office = places.find((p) => (p.name || '').toLowerCase() === 'office');
+          setEditForm((prev) => ({
+            ...prev,
+            homeAddress: prev.homeAddress || home?.address || '',
+            officeAddress: prev.officeAddress || office?.address || '',
+          }));
+        }
+      } catch {}
+    })();
+  }, []);
+
+  async function handleUseGpsForHome() {
+    setDetectingGps(true);
+    try {
+      const res = await getCurrentUserAddress();
+      if (res?.address) {
+        setEditForm((prev) => ({ ...prev, homeAddress: res.address }));
+        Alert.alert('GPS Location Set', `Home address set to:\n${res.address}`);
+      } else {
+        Alert.alert('Location Notice', 'Could not detect current GPS coordinates. Please type your address.');
+      }
+    } catch {
+      Alert.alert('GPS Error', 'Unable to retrieve your current location.');
+    } finally {
+      setDetectingGps(false);
+    }
+  }
+
+  async function handleSaveProfile() {
+    if (!editForm.firstName.trim()) {
+      Alert.alert('Required Field', 'Please enter your first name.');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const payload = {
+        firstName: editForm.firstName.trim(),
+        lastName: editForm.lastName.trim(),
+        phoneNumber: editForm.phoneNumber.trim(),
+        homeAddress: editForm.homeAddress.trim(),
+        officeAddress: editForm.officeAddress.trim(),
+      };
+
+      // 1. Update backend profile
+      await userApi.updateProfile(payload).catch(() => {});
+
+      // 2. Update AuthContext & persistent AsyncStorage
+      await updateUserProfile(payload);
+
+      // 3. Sync to saved-places table for quick corridors
+      if (payload.homeAddress) {
+        await userApi.addSavedPlace({ name: 'Home', address: payload.homeAddress }).catch(() => {});
+      }
+      if (payload.officeAddress) {
+        await userApi.addSavedPlace({ name: 'Office', address: payload.officeAddress }).catch(() => {});
+      }
+
+      setIsEditing(false);
+      Alert.alert('Profile Updated', 'Your personal and commute address details have been saved.');
+    } catch (error) {
+      Alert.alert('Could not update profile', getErrorMessage(error));
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function handleResetPassword() {
     if (!newPassword || newPassword.length < 6) {
@@ -61,6 +164,8 @@ export default function ProfileScreen({ navigation }) {
     );
   }
 
+  const officeQuickChips = ['Electronic City', 'Whitefield', 'SG Highway', 'Prahlad Nagar', 'Cyber City'];
+
   return (
     <Screen contentStyle={{ paddingBottom: 90, gap: 16 }}>
       {/* ── Employee Profile Header ── */}
@@ -90,6 +195,15 @@ export default function ProfileScreen({ navigation }) {
             />
           </View>
         </View>
+
+        <TouchableOpacity
+          style={styles.editProfileBtn}
+          onPress={() => setIsEditing(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="pencil" size={15} color={colors.green} />
+          <Text style={styles.editProfileBtnText}>Edit</Text>
+        </TouchableOpacity>
       </Card>
 
       {/* ── Corporate Hub & Services ── */}
@@ -177,25 +291,56 @@ export default function ProfileScreen({ navigation }) {
         ) : null}
       </View>
 
-      {/* ── Saved Places ── */}
+      {/* ── Saved Workplaces & Corridors (Editable Home & Office) ── */}
       <Card style={styles.placesCard}>
-        <Text style={styles.sectionHeading}>Saved Workplaces & Corridors</Text>
-        <View style={styles.placeItem}>
-          <Ionicons name="home-outline" size={18} color={colors.green} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.placeTitle}>Home</Text>
-            <Text style={styles.placeSub}>Koramangala 4th Block, Bengaluru</Text>
-          </View>
-          <Badge label="Primary" variant="neutral" size="sm" />
+        <View style={styles.placesHeader}>
+          <Text style={styles.sectionHeading}>Saved Workplaces & Corridors</Text>
+          <TouchableOpacity onPress={() => setIsEditing(true)}>
+            <Text style={styles.editActionText}>Change Addresses</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.placeItem}>
-          <Ionicons name="briefcase-outline" size={18} color={colors.blue} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.placeTitle}>Office</Text>
-            <Text style={styles.placeSub}>Electronic City Phase 1, Bengaluru</Text>
+
+        {/* Home */}
+        <TouchableOpacity
+          style={styles.placeItem}
+          onPress={() => setIsEditing(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.placeIconWrap, { backgroundColor: colors.greenLight }]}>
+            <Ionicons name="home-outline" size={18} color={colors.green} />
           </View>
-          <Badge label="Workplace" variant="neutral" size="sm" />
-        </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.placeTitle}>Home</Text>
+              <Badge label="Primary" variant="neutral" size="sm" />
+            </View>
+            <Text style={styles.placeSub} numberOfLines={2}>
+              {user?.homeAddress || editForm.homeAddress || 'Tap to set your home address'}
+            </Text>
+          </View>
+          <Ionicons name="pencil-outline" size={16} color={colors.muted} />
+        </TouchableOpacity>
+
+        {/* Office */}
+        <TouchableOpacity
+          style={styles.placeItem}
+          onPress={() => setIsEditing(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.placeIconWrap, { backgroundColor: colors.blueLight }]}>
+            <Ionicons name="briefcase-outline" size={18} color={colors.blue} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.placeTitle}>Office / Workplace</Text>
+              <Badge label="Workplace" variant="neutral" size="sm" />
+            </View>
+            <Text style={styles.placeSub} numberOfLines={2}>
+              {user?.officeAddress || editForm.officeAddress || 'Tap to set your office address'}
+            </Text>
+          </View>
+          <Ionicons name="pencil-outline" size={16} color={colors.muted} />
+        </TouchableOpacity>
       </Card>
 
       {/* ── Security / Password ── */}
@@ -243,6 +388,143 @@ export default function ProfileScreen({ navigation }) {
           onPress={handleSignOut}
         />
       </View>
+
+      {/* ── Edit Profile & Addresses Modal ── */}
+      <Modal
+        visible={isEditing}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsEditing(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Edit Profile & Commute</Text>
+                <Text style={styles.modalSub}>Update your personal info, home and office address</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsEditing(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close-circle" size={24} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 14, paddingBottom: 20 }}
+            >
+              {/* Names */}
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label="First Name"
+                    placeholder="First name"
+                    value={editForm.firstName}
+                    onChangeText={(val) => setEditForm((p) => ({ ...p, firstName: val }))}
+                    icon="person-outline"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label="Last Name"
+                    placeholder="Last name"
+                    value={editForm.lastName}
+                    onChangeText={(val) => setEditForm((p) => ({ ...p, lastName: val }))}
+                  />
+                </View>
+              </View>
+
+              {/* Phone */}
+              <Field
+                label="Phone Number"
+                placeholder="+91 98765 43210"
+                value={editForm.phoneNumber}
+                onChangeText={(val) => setEditForm((p) => ({ ...p, phoneNumber: val }))}
+                keyboardType="phone-pad"
+                icon="call-outline"
+              />
+
+              {/* Home Address */}
+              <View>
+                <View style={styles.labelWithGps}>
+                  <Text style={styles.inputLabel}>Home Address</Text>
+                  <TouchableOpacity
+                    style={styles.gpsPill}
+                    onPress={handleUseGpsForHome}
+                    disabled={detectingGps}
+                  >
+                    {detectingGps ? (
+                      <ActivityIndicator size="small" color={colors.green} />
+                    ) : (
+                      <>
+                        <Ionicons name="locate" size={13} color={colors.green} />
+                        <Text style={styles.gpsPillText}>Use Current GPS</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                <Field
+                  placeholder="e.g. Koramangala 4th Block, Bengaluru"
+                  value={editForm.homeAddress}
+                  onChangeText={(val) => setEditForm((p) => ({ ...p, homeAddress: val }))}
+                  icon="home-outline"
+                />
+              </View>
+
+              {/* Office Address */}
+              <View>
+                <Text style={styles.inputLabel}>Office / Workplace Address</Text>
+                <Field
+                  placeholder="e.g. Electronic City Phase 1, Bengaluru"
+                  value={editForm.officeAddress}
+                  onChangeText={(val) => setEditForm((p) => ({ ...p, officeAddress: val }))}
+                  icon="briefcase-outline"
+                />
+
+                {/* Quick corridor chips */}
+                <View style={styles.quickChipsWrap}>
+                  {officeQuickChips.map((chip) => (
+                    <TouchableOpacity
+                      key={chip}
+                      style={[
+                        styles.corridorChip,
+                        editForm.officeAddress.includes(chip) && styles.corridorChipActive,
+                      ]}
+                      onPress={() => setEditForm((p) => ({ ...p, officeAddress: `${chip}, Bengaluru` }))}
+                    >
+                      <Text
+                        style={[
+                          styles.corridorChipText,
+                          editForm.officeAddress.includes(chip) && styles.corridorChipTextActive,
+                        ]}
+                      >
+                        {chip}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Actions */}
+              <View style={styles.modalActionButtons}>
+                <Button
+                  title="Save Profile Details"
+                  icon="checkmark-circle-outline"
+                  loading={savingProfile}
+                  onPress={handleSaveProfile}
+                />
+                <Button
+                  title="Cancel"
+                  variant="ghost"
+                  onPress={() => setIsEditing(false)}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -293,6 +575,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
     flexWrap: 'wrap',
   },
+  editProfileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.greenLight,
+    borderWidth: 1,
+    borderColor: colors.greenBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  editProfileBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.green,
+  },
   linksCard: {
     backgroundColor: colors.panel,
     borderRadius: spacing.radius,
@@ -332,6 +630,16 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  placesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.green,
+  },
   sectionHeading: {
     fontSize: 15,
     fontWeight: '800',
@@ -342,8 +650,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     backgroundColor: colors.panelSoft,
-    padding: 10,
+    padding: 12,
     borderRadius: spacing.radiusSm,
+  },
+  placeIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   placeTitle: {
     fontSize: 13,
@@ -351,9 +666,9 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   placeSub: {
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 1,
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   securityCard: {
     padding: 16,
@@ -380,4 +695,103 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 4,
   },
+
+  // Modal Styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 34,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+    paddingBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  modalSub: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  labelWithGps: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 6,
+  },
+  gpsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.greenLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.greenBorder,
+  },
+  gpsPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.greenText,
+  },
+  quickChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  corridorChip: {
+    backgroundColor: colors.panelSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  corridorChipActive: {
+    backgroundColor: colors.greenLight,
+    borderColor: colors.green,
+  },
+  corridorChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  corridorChipTextActive: {
+    color: colors.greenText,
+    fontWeight: '700',
+  },
+  modalActionButtons: {
+    gap: 8,
+    marginTop: 10,
+  },
 });
+

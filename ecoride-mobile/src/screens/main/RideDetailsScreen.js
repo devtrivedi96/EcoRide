@@ -15,6 +15,7 @@ import Badge from '../../components/Badge';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Screen from '../../components/Screen';
+import MiniRouteMap from '../../components/MiniRouteMap';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage } from '../../utils/format';
 
@@ -119,7 +120,7 @@ export default function RideDetailsScreen({ route, navigation }) {
 
       {/* ── Route Timeline Card ── */}
       <Card style={styles.routeCard}>
-        <Text style={styles.sectionHeading}>Trip Route</Text>
+        <Text style={styles.sectionHeading}>Trip Route & Wayout Points</Text>
 
         <View style={styles.timelineRow}>
           <View style={styles.timelineVisual}>
@@ -135,13 +136,23 @@ export default function RideDetailsScreen({ route, navigation }) {
             </View>
 
             {ride.routeWaypoints ? (
-              <View style={styles.waypointBox}>
-                <Ionicons name="git-commit-outline" size={14} color={colors.muted} />
-                <Text style={styles.waypointText}>Via {ride.routeWaypoints}</Text>
+              <View style={{ marginVertical: 8, gap: 4 }}>
+                {ride.routeWaypoints
+                  .split(',')
+                  .map((w) => w.trim())
+                  .filter(Boolean)
+                  .map((stop, i) => (
+                    <View key={`wp-${i}`} style={styles.waypointBox}>
+                      <Ionicons name="git-commit-outline" size={14} color={colors.blue} />
+                      <Text style={styles.waypointText}>
+                        Wayout Point {i + 1}: {stop}
+                      </Text>
+                    </View>
+                  ))}
               </View>
             ) : null}
 
-            <View style={{ marginTop: 14 }}>
+            <View style={{ marginTop: 6 }}>
               <Text style={styles.locationTitle}>{ride.destination}</Text>
               <Text style={styles.locationSub}>Drop-off Location</Text>
             </View>
@@ -166,6 +177,16 @@ export default function RideDetailsScreen({ route, navigation }) {
             <Text style={styles.viewRouteMapBtnText}>Live Route Map</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Embedded Mini Route Map */}
+        <MiniRouteMap
+          pickup={ride.pickupLocation}
+          destination={ride.destination}
+          waypoints={ride.routeWaypoints}
+          height={160}
+          navigation={navigation}
+          style={{ marginTop: 12 }}
+        />
       </Card>
 
       {/* ── Driver Profile Card ── */}

@@ -44,6 +44,7 @@ export const mockAuthApi = {
 // ─── User ─────────────────────────────────────────────────────────────────────
 export const mockUserApi = {
   me: async () => { await delay(200); return MOCK_USER; },
+  updateProfile: async (payload) => { await delay(200); Object.assign(MOCK_USER, payload); return MOCK_USER; },
   resetPassword: async () => { await delay(); return { message: 'Password updated (mock).' }; },
   savedPlaces: async () => { await delay(); return []; },
   addSavedPlace: async (p) => { await delay(); return { id: `sp-${Date.now()}`, ...p }; },

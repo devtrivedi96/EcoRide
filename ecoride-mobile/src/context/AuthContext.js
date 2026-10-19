@@ -192,6 +192,13 @@ export function AuthProvider({ children }) {
     return freshUser;
   }
 
+  async function updateUserProfile(updates) {
+    const merged = { ...user, ...updates };
+    setUser(merged);
+    await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(merged));
+    return merged;
+  }
+
   async function logout() {
     await clearSession();
   }
@@ -205,6 +212,7 @@ export function AuthProvider({ children }) {
       login,
       register,
       refreshMe,
+      updateUserProfile,
       logout,
     }),
     [booting, token, user]
