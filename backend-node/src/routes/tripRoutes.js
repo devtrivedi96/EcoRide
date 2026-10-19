@@ -73,7 +73,8 @@ router.post('/:tripId/reject', authenticate, async (req, res, next) => {
 // POST /api/trips/:tripId/verify-otp — Verify OTP and start trip
 router.post('/:tripId/verify-otp', authenticate, async (req, res, next) => {
   try {
-    res.json(await tripService.verifyOtpAndStartTrip(req.params.tripId, req.query.otp, req.user.email));
+    const otp = (req.query.otp || req.body?.otp || '').trim();
+    res.json(await tripService.verifyOtpAndStartTrip(req.params.tripId, otp, req.user.email));
   } catch (err) { next(err); }
 });
 

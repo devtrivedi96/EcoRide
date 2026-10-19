@@ -39,6 +39,26 @@ export default function BookingSuccessScreen({ route, navigation }) {
           <Text style={styles.statusBadgeText}>REQUEST CONFIRMED</Text>
         </View>
 
+        {/* Boarding Start OTP Banner */}
+        {trip?.startOtp ? (
+          <View style={styles.otpBanner}>
+            <View style={styles.otpBannerLeft}>
+              <View style={styles.otpKeyCircle}>
+                <Ionicons name="key" size={16} color={colors.amber} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.otpBannerTitle}>BOARDING START OTP</Text>
+                <Text style={styles.otpBannerSub}>
+                  Share this 4-digit code with your driver when boarding
+                </Text>
+              </View>
+            </View>
+            <View style={styles.otpCodeBadge}>
+              <Text style={styles.otpCodeText}>{trip.startOtp}</Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* Route Details with Written Wayout Points */}
         <View style={styles.routeContainer}>
           <View style={styles.routeVisual}>
@@ -229,6 +249,55 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  otpBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.amberLight,
+    borderWidth: 1,
+    borderColor: colors.amberBorder,
+    borderRadius: spacing.radiusSm,
+    padding: 12,
+    marginVertical: 4,
+    gap: 10,
+  },
+  otpBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  otpKeyCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpBannerTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.amberText,
+    letterSpacing: 0.5,
+  },
+  otpBannerSub: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  otpCodeBadge: {
+    backgroundColor: colors.amber,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  otpCodeText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 2,
   },
   routeContainer: {
     flexDirection: 'row',
