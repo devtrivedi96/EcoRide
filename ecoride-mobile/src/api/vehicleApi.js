@@ -3,9 +3,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MOCK_MODE, STORAGE_KEYS } from './config';
 import { mockVehicleApi } from '../mock/mockApi';
 
-const VEHICLES_CACHE_KEY = 'ecoride_cached_vehicles';
+const VEHICLES_CACHE_PREFIX = '@ecoride_vehicles_';
 
-// Map of real, authentic vehicles residing in the Firestore database on Render
+async function getCurrentUser() {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.user);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+function getUserKey(user) {
+  if (!user) return 'guest';
+  return (user.id || user.email || 'guest').trim().toLowerCase();
+}
+
+function getVehiclesKey(userKey) {
+  return `${VEHICLES_CACHE_PREFIX}${userKey}`;
+}
+
+// Map of real, authentic vehicles residing in the Firestore database on Render for pre-seeded corporate accounts
 export const KNOWN_DB_VEHICLES = {
   'alice@acme.com': {
     id: 'JtukyecGbddq0mly0Vu5',
@@ -98,22 +115,23 @@ export const KNOWN_DB_VEHICLES = {
     seatingCapacity: 4,
     vehicleType: 'ELECTRIC',
   },
-  default: {
-    id: 'JtukyecGbddq0mly0Vu5',
-    model: 'Tesla Model 3',
-    registrationNumber: 'KA-01-AB-1234',
-    seatingCapacity: 4,
-    vehicleType: 'ELECTRIC',
-  },
 };
 
 const realVehicleApi = {
   getMyVehicles: async () => {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) return [];
+
+    const userKey = getUserKey(currentUser);
+    const currentEmail = (currentUser.email || '').trim().toLowerCase();
+    const currentId = currentUser.id;
+    const cacheKey = getVehiclesKey(userKey);
+
     // 1. Try fetching from backend /vehicles or /users/vehicles
     try {
       const res = await api.get('/vehicles');
       if (Array.isArray(res.data) && res.data.length > 0) {
-        await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(res.data));
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(res.data));
         return res.data;
       }
     } catch (err) {
@@ -121,43 +139,28 @@ const realVehicleApi = {
         try {
           const userRes = await api.get('/users/vehicles');
           if (Array.isArray(userRes.data) && userRes.data.length > 0) {
-            await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(userRes.data));
+            await AsyncStorage.setItem(cacheKey, JSON.stringify(userRes.data));
             return userRes.data;
           }
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
     }
 
-    // 2. Load locally cached vehicles
+    // 2. Load locally cached vehicles for THIS account
     let localVehicles = [];
     try {
-      const cached = await AsyncStorage.getItem(VEHICLES_CACHE_KEY);
+      const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
           localVehicles = parsed;
         }
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
 
-    // 3. Resolve user details
-    let currentUser = null;
-    try {
-      const userRaw = await AsyncStorage.getItem(STORAGE_KEYS.user);
-      if (userRaw) {
-        currentUser = JSON.parse(userRaw);
-      }
-    } catch {
-      // ignore
-    }
+    // Check if this specific email is in the pre-seeded DB list
+    const matchedDbVehicle = currentEmail ? KNOWN_DB_VEHICLES[currentEmail] : null;
 
-    const matchedDbVehicle = currentUser?.email ? KNOWN_DB_VEHICLES[currentUser.email] : null;
-
-    // 4. Clean and de-duplicate list (never produce duplicate IDs or duplicate registration numbers)
     const seenRegs = new Set();
     const seenIds = new Set();
     const uniqueVehicles = [];
@@ -168,7 +171,6 @@ const realVehicleApi = {
       if (seenRegs.has(reg)) continue;
       seenRegs.add(reg);
 
-      // Ensure every vehicle has a unique ID
       let id = v.id;
       if (!id || seenIds.has(id)) {
         id = `veh-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
@@ -178,34 +180,27 @@ const realVehicleApi = {
       uniqueVehicles.push({
         ...v,
         id,
+        userId: currentId,
       });
     }
 
-    // If user has a verified database vehicle (e.g. Alice or Admin) and it's not yet in the list, add it
+    // Only add matchedDbVehicle if the current user email specifically matches
     if (matchedDbVehicle && !seenRegs.has(matchedDbVehicle.registrationNumber)) {
       uniqueVehicles.unshift({
         ...matchedDbVehicle,
-        userId: currentUser?.id,
+        userId: currentId,
       });
     }
 
-    // If list is completely empty, provide an initial vehicle with a guaranteed unique ID
-    if (uniqueVehicles.length === 0) {
-      const initialId = matchedDbVehicle?.id || `veh-${Date.now().toString(36)}`;
-      uniqueVehicles.push({
-        id: initialId,
-        model: matchedDbVehicle?.model || 'Tesla Model 3',
-        registrationNumber: matchedDbVehicle?.registrationNumber || 'KA-01-AB-1234',
-        seatingCapacity: matchedDbVehicle?.seatingCapacity || 4,
-        vehicleType: matchedDbVehicle?.vehicleType || 'ELECTRIC',
-      });
-    }
-
-    await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(uniqueVehicles));
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(uniqueVehicles));
     return uniqueVehicles;
   },
 
   registerVehicle: async (payload) => {
+    const currentUser = await getCurrentUser();
+    const userKey = getUserKey(currentUser);
+    const cacheKey = getVehiclesKey(userKey);
+
     const body = {
       model: payload.model?.trim(),
       registrationNumber: (payload.registrationNumber || payload.regNo)?.trim().toUpperCase(),
@@ -220,13 +215,11 @@ const realVehicleApi = {
       const res = await api.post('/vehicles', body);
       createdVehicle = res.data;
     } catch (err) {
-      if (err.response?.status === 404) {
-        try {
-          const userRes = await api.post('/users/vehicles', body);
-          createdVehicle = userRes.data;
-        } catch {
-          // fallback locally
-        }
+      try {
+        const userRes = await api.post('/users/vehicles', body);
+        createdVehicle = userRes.data;
+      } catch {
+        // fallback locally
       }
     }
 
@@ -238,51 +231,56 @@ const realVehicleApi = {
         registrationNumber: body.registrationNumber,
         seatingCapacity: body.seatingCapacity,
         vehicleType: body.vehicleType,
+        userId: currentUser?.id,
         createdAt: new Date().toISOString(),
       };
     }
 
-    // Update local cache without duplicates
+    // Update account-scoped local cache without duplicates
     try {
-      const cached = await AsyncStorage.getItem(VEHICLES_CACHE_KEY);
+      const cached = await AsyncStorage.getItem(cacheKey);
       const list = cached ? JSON.parse(cached) : [];
       const updatedList = [
         createdVehicle,
-        ...list.filter((v) => v && v.id !== createdVehicle.id && v.registrationNumber !== createdVehicle.registrationNumber),
+        ...list.filter(
+          (v) =>
+            v &&
+            v.id !== createdVehicle.id &&
+            v.registrationNumber !== createdVehicle.registrationNumber
+        ),
       ];
-      await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(updatedList));
-    } catch {
-      // ignore
-    }
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(updatedList));
+    } catch {}
 
     return createdVehicle;
   },
 
   deleteVehicle: async (vehicleId) => {
+    const currentUser = await getCurrentUser();
+    const userKey = getUserKey(currentUser);
+    const cacheKey = getVehiclesKey(userKey);
+
     try {
       await api.delete(`/vehicles/${vehicleId}`);
     } catch {
       try {
         await api.delete(`/users/vehicles/${vehicleId}`);
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     try {
-      const cached = await AsyncStorage.getItem(VEHICLES_CACHE_KEY);
+      const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         const list = JSON.parse(cached);
         const filtered = list.filter((v) => v.id !== vehicleId);
-        await AsyncStorage.setItem(VEHICLES_CACHE_KEY, JSON.stringify(filtered));
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(filtered));
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   adminList: () => api.get('/admin/vehicles').then((res) => res.data),
-  adminUpdate: (vehicleId, payload) => api.put(`/admin/vehicles/${vehicleId}`, payload).then((res) => res.data),
+  adminUpdate: (vehicleId, payload) =>
+    api.put(`/admin/vehicles/${vehicleId}`, payload).then((res) => res.data),
   adminDelete: (vehicleId) => api.delete(`/admin/vehicles/${vehicleId}`),
 };
 

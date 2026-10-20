@@ -119,7 +119,9 @@ export function AuthProvider({ children }) {
       STORAGE_KEYS.token,
       STORAGE_KEYS.user,
       STORAGE_KEYS.credentials,
-    ]);
+      'ecoride_my_rides',
+      'ecoride_cached_vehicles',
+    ]).catch(() => {});
     setToken(null);
     setUser(null);
   }

@@ -24,10 +24,14 @@ export default function RideDetailsScreen({ route, navigation }) {
   const { notifyRideBooked } = useNotification();
   const { ride, searchSeats = 1 } = route.params || {};
 
-  const isMyRide =
-    (user && (user.id === ride?.driverId || user.email === ride?.driver?.email)) ||
-    ride?.driverId === 'me' ||
-    ride?.isLocal === true;
+  const isMyRide = Boolean(
+    user &&
+      ((ride?.driverId && user.id === ride.driverId) ||
+        (ride?.driver?.id && user.id === ride.driver.id) ||
+        (ride?.driver?.email &&
+          user.email &&
+          user.email.trim().toLowerCase() === ride.driver.email.trim().toLowerCase()))
+  );
 
   const [selectedSeats, setSelectedSeats] = useState(
     Math.min(Number(searchSeats) || 1, ride?.availableSeats || 1)
