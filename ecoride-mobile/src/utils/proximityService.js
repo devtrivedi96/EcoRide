@@ -207,161 +207,42 @@ export function getDefaultDestinationForLocation(locationInfo) {
 }
 
 /**
- * Synthesizes hyper-local corporate carpools centered directly around user's GPS coordinates.
- * Guarantees that users in Gujarat, Bengaluru, or any region ALWAYS see real nearby pickups (0.3 - 3 km).
- */
-export function generateRegionalRides(userCoords, locationInfo) {
-  const userLat = Number(userCoords?.latitude ?? userCoords?.lat ?? 23.0225);
-  const userLng = Number(userCoords?.longitude ?? userCoords?.lng ?? 72.5714);
-  const inGujarat = isGujaratLocation(userCoords, locationInfo?.address, locationInfo?.city);
-  const areaName = locationInfo?.area || (inGujarat ? 'Prahlad Nagar, SG Highway' : 'Koramangala');
-  const now = Date.now();
-
-  if (inGujarat) {
-    return [
-      {
-        id: 'local-gj-001',
-        pickupLocation: areaName,
-        destination: 'GIFT City, Gandhinagar',
-        departureTime: new Date(now + 45 * 60 * 1000).toISOString(),
-        availableSeats: 3,
-        farePerSeat: 75,
-        routeWaypoints: 'Iskcon Circle, SG Highway, PDPU Road',
-        pickupCoords: { lat: userLat + 0.002, lng: userLng + 0.002 },
-        dropCoords: { lat: 23.2156, lng: 72.6369 },
-        vehicle: {
-          id: 'veh-gj-001',
-          model: 'Tata Nexon EV Max',
-          registrationNumber: 'GJ 01 ER 8899',
-          seatingCapacity: 4,
-          vehicleType: 'ELECTRIC',
-        },
-        driver: {
-          id: 'driver-gj-001',
-          firstName: 'Pooja',
-          lastName: 'Varma',
-          companyName: 'TCS GIFT City',
-        },
-        driverRating: '4.9',
-        matchScore: '98% Match',
-      },
-      {
-        id: 'local-gj-002',
-        pickupLocation: 'SG Highway / Iskcon Cross Road',
-        destination: 'Infocity, Gandhinagar',
-        departureTime: new Date(now + 75 * 60 * 1000).toISOString(),
-        availableSeats: 2,
-        farePerSeat: 85,
-        routeWaypoints: 'Sola Bhagwat, Vaishno Devi Circle',
-        pickupCoords: { lat: 23.0280, lng: 72.5070 },
-        dropCoords: { lat: 23.1880, lng: 72.6280 },
-        vehicle: {
-          id: 'veh-gj-002',
-          model: 'MG ZS EV',
-          registrationNumber: 'GJ 01 XY 4422',
-          seatingCapacity: 4,
-          vehicleType: 'ELECTRIC',
-        },
-        driver: {
-          id: 'driver-gj-002',
-          firstName: 'Harsh',
-          lastName: 'Patel',
-          companyName: 'Adani Digital Labs',
-        },
-        driverRating: '4.8',
-        matchScore: '96% Match',
-      },
-      {
-        id: 'local-gj-003',
-        pickupLocation: 'Vastrapur / Bodakdev',
-        destination: 'GIFT City SEZ',
-        departureTime: new Date(now + 110 * 60 * 1000).toISOString(),
-        availableSeats: 3,
-        farePerSeat: 90,
-        routeWaypoints: 'Sindhu Bhavan Road, SG Highway',
-        pickupCoords: { lat: 23.0350, lng: 72.5293 },
-        dropCoords: { lat: 23.2156, lng: 72.6369 },
-        vehicle: {
-          id: 'veh-gj-003',
-          model: 'Hyundai Ioniq 5',
-          registrationNumber: 'GJ 18 AB 1100',
-          seatingCapacity: 4,
-          vehicleType: 'ELECTRIC',
-        },
-        driver: {
-          id: 'driver-gj-003',
-          firstName: 'Anand',
-          lastName: 'Shah',
-          companyName: 'Tech Mahindra',
-        },
-        driverRating: '5.0',
-        matchScore: '94% Match',
-      },
-    ];
-  }
-
-  // Non-Gujarat fallback (Bengaluru)
-  return [
-    {
-      id: 'local-blr-001',
-      pickupLocation: areaName,
-      destination: 'Electronic City Phase 1',
-      departureTime: new Date(now + 45 * 60 * 1000).toISOString(),
-      availableSeats: 3,
-      farePerSeat: 80,
-      routeWaypoints: 'Silk Board, HSR Layout',
-      pickupCoords: { lat: userLat + 0.002, lng: userLng + 0.002 },
-      dropCoords: { lat: 12.8450, lng: 77.6630 },
-      vehicle: {
-        id: 'veh-blr-001',
-        model: 'Tata Nexon EV',
-        registrationNumber: 'KA 01 AB 1234',
-        seatingCapacity: 4,
-        vehicleType: 'ELECTRIC',
-      },
-      driver: {
-        id: 'driver-blr-001',
-        firstName: 'Rajan',
-        lastName: 'Sharma',
-        companyName: 'Acme Corp',
-      },
-      driverRating: '4.9',
-      matchScore: '98% Match',
-    },
-  ];
-}
-
-/**
- * Strict Geofence Guard: Filters out rides in other states/cities (> 50 km)
- * and guarantees local candidate rides for the user's real GPS position.
+ * Strict Geofence Guard: Filters out rides in other states/cities (> 45 km)
+ * and keeps only authentic, real carpool rides matching the user's geographic region.
  */
 export function getLocalCandidateRides(allRides, userCoords, locationInfo) {
+  if (!Array.isArray(allRides) || allRides.length === 0) {
+    return [];
+  }
+
   const userLat = Number(userCoords?.latitude ?? userCoords?.lat);
   const userLng = Number(userCoords?.longitude ?? userCoords?.lng);
 
   if (isNaN(userLat) || isNaN(userLng)) {
-    return allRides || [];
+    return allRides;
   }
 
-  // 1. Strict Geofencing: Only keep rides whose pickup is within 45 km of the user
-  const localRides = (allRides || []).filter((ride) => {
+  // Strict Geofencing: Only keep real rides whose pickup is within 45 km of the user
+  const localRides = allRides.filter((ride) => {
+    if (!ride || !ride.id) return false;
+
     const pickupCoords =
       ride.pickupCoords ||
       (ride.pickupLatitude && ride.pickupLongitude
         ? { lat: ride.pickupLatitude, lng: ride.pickupLongitude }
         : getFastCoordinates(ride.pickupLocation));
 
-    if (!pickupCoords) return false;
+    if (!pickupCoords) {
+      // If coordinates cannot be determined, check if regional flags match
+      const isUserGj = isGujaratLocation({ lat: userLat, lng: userLng }, locationInfo?.address, locationInfo?.city);
+      const isRideGj = isGujaratLocation(null, ride.pickupLocation, ride.destination);
+      return isUserGj === isRideGj;
+    }
+
     const dist = distanceKm(userLat, userLng, pickupCoords.lat, pickupCoords.lng);
     // Discard any distant cross-state rides (e.g. Bangalore to Gujarat is 1500 km)
     return dist != null && dist <= 45;
   });
-
-  // 2. If no local rides exist in database for this region, synthesize regional rides
-  if (localRides.length < 2) {
-    const synthetic = generateRegionalRides({ lat: userLat, lng: userLng }, locationInfo);
-    return [...localRides, ...synthetic];
-  }
 
   return localRides;
 }

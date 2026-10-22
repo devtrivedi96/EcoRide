@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -60,9 +61,14 @@ export default function RegisterScreen({ navigation }) {
     <Screen contentStyle={styles.content}>
       {/* ── Header ── */}
       <View style={styles.header}>
+        <Image
+          source={require('../../../assets/icon.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
         <Text style={styles.title}>Create Corporate Account</Text>
         <Text style={styles.subtitle}>
-          Join colleagues on Bengaluru's intelligent corporate carpool network.
+          Join colleagues on an intelligent corporate carpool network.
         </Text>
       </View>
 
@@ -170,6 +176,12 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: 4,
+  },
+  logoImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    marginBottom: 6,
   },
   title: {
     fontSize: 22,

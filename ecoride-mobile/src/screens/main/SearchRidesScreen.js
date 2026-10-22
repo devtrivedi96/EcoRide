@@ -45,7 +45,7 @@ const RADIUS_OPTIONS = [
   { id: '25', label: 'Within 25 km' },
 ];
 
-export default function SearchRidesScreen({ navigation }) {
+export default function SearchRidesScreen({ route, navigation }) {
   const now = useRideTicker(15000);
   const [pickupLocation, setPickupLocation] = useState('');
   const [destination, setDestination] = useState('Electronic City');
@@ -62,6 +62,17 @@ export default function SearchRidesScreen({ navigation }) {
 
   useEffect(() => {
     (async () => {
+      // If navigated with route params (from notification or corridor banner), prioritize them
+      const paramPickup = route?.params?.pickupLocation || route?.params?.pickup;
+      const paramDest = route?.params?.destination;
+
+      if (paramPickup || paramDest) {
+        if (paramPickup) setPickupLocation(paramPickup);
+        if (paramDest) setDestination(paramDest);
+        handleSearch(paramPickup);
+        return;
+      }
+
       setLocating(true);
       let detected = '';
       try {
@@ -81,7 +92,7 @@ export default function SearchRidesScreen({ navigation }) {
         handleSearch(detected);
       }
     })();
-  }, []);
+  }, [route?.params]);
 
   async function handleSearch(pickupOverride) {
     setLoading(true);

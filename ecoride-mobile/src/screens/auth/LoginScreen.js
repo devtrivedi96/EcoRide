@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -50,9 +51,11 @@ export default function LoginScreen({ navigation }) {
     <Screen contentStyle={styles.content}>
       {/* ── Brand Hero ── */}
       <View style={styles.hero}>
-        <View style={styles.logoCircle}>
-          <Ionicons name="leaf" size={32} color="#FFFFFF" />
-        </View>
+        <Image
+          source={require('../../../assets/icon.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
         <Text style={styles.brandName}>EcoRide</Text>
         <Text style={styles.tagline}>Intelligent Corporate Ride Sharing</Text>
         <Badge label="Enterprise Commute Platform" variant="green" size="sm" />
@@ -150,6 +153,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 8,
+  },
+  logoImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 20,
+    marginBottom: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   logoCircle: {
     width: 60,

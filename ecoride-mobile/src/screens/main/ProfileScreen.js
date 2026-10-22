@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -498,6 +499,20 @@ export default function ProfileScreen({ navigation }) {
           icon="log-out-outline"
           onPress={handleSignOut}
         />
+
+        <View style={{ alignItems: 'center', marginTop: 14, marginBottom: 8, gap: 4 }}>
+          <Image
+            source={require('../../../assets/icon.png')}
+            style={{ width: 44, height: 44, borderRadius: 12 }}
+            resizeMode="contain"
+          />
+          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.text }}>
+            EcoRide Corporate Commute
+          </Text>
+          <Text style={{ fontSize: 11, color: colors.muted }}>
+            Version 1.0.0 · Production Ready
+          </Text>
+        </View>
       </View>
 
       {/* ── Edit Profile & Addresses Modal ── */}

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io } from 'socket.io-client';
 import {
   initNotifications,
@@ -12,6 +13,87 @@ import { rideApi } from '../api/rideApi';
 import { SOCKET_URL, MOCK_MODE } from '../api/config';
 import { useAuth } from './AuthContext';
 import { navigate } from '../navigation/navigationRef';
+import { formatDateTime } from '../utils/format';
+import { getCurrentUserAddress } from '../utils/location';
+import {
+  calculateCorridorMatch,
+  getFastCoordinates,
+  distanceKm,
+  isGujaratLocation,
+} from '../utils/proximityService';
+
+/**
+ * Validates whether an active carpool ride matches a user's commute corridor
+ * (based on their home/office addresses, current GPS position, and route deviation).
+ */
+function checkRideMatchesUserCorridor(ride, user, userGps) {
+  if (!ride) return false;
+
+  const userHome = (user?.homeAddress || '').trim();
+  const userOffice = (user?.officeAddress || '').trim();
+  const ridePickup = (ride.pickupLocation || '').trim();
+  const rideDest = (ride.destination || '').trim();
+
+  // 1. If user has saved corridor preferences (home or office)
+  if (userHome || userOffice) {
+    const userSource = userHome || userGps?.address || ridePickup;
+    const userDestination = userOffice || rideDest;
+
+    // Fast keyword check
+    const hLower = userHome.toLowerCase();
+    const oLower = userOffice.toLowerCase();
+    const pLower = ridePickup.toLowerCase();
+    const dLower = rideDest.toLowerCase();
+
+    const homeMatches = !userHome || pLower.includes(hLower) || hLower.includes(pLower);
+    const officeMatches = !userOffice || dLower.includes(oLower) || oLower.includes(dLower);
+
+    if (homeMatches && officeMatches) {
+      return true;
+    }
+
+    // Mathematical corridor deviation check
+    const corridorAnalysis = calculateCorridorMatch(
+      ride,
+      userSource,
+      userDestination,
+      userGps?.coords
+    );
+
+    if (
+      corridorAnalysis.isDirectCorridor ||
+      corridorAnalysis.isClosePickup ||
+      corridorAnalysis.totalDeviation <= 14.0
+    ) {
+      return true;
+    }
+  }
+
+  // 2. If user hasn't set home/office yet, check against live GPS position
+  if (userGps?.coords) {
+    const ridePickupCoords = ride.pickupCoords || getFastCoordinates(ridePickup);
+    if (ridePickupCoords?.lat && ridePickupCoords?.lng) {
+      const dist = distanceKm(
+        userGps.coords.latitude || userGps.coords.lat,
+        userGps.coords.longitude || userGps.coords.lng,
+        ridePickupCoords.lat,
+        ridePickupCoords.lng
+      );
+      if (dist <= 18) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Regional match if both are in Gujarat or both in Bangalore corporate area
+  const isUserGujarat = isGujaratLocation(userGps?.coords, userHome, userOffice);
+  const isRideGujarat = isGujaratLocation(ride.pickupCoords, ridePickup, rideDest);
+  if (isUserGujarat && isRideGujarat) {
+    return true;
+  }
+
+  return false;
+}
 
 const NotificationContext = createContext(null);
 
@@ -25,11 +107,24 @@ export function NotificationProvider({ children }) {
   const hasInitializedDriverTripsRef = useRef(false);
   const knownPassengerTripStatusRef = useRef(new Map());
   const notifiedExpiredRidesRef = useRef(new Set());
+  const seenCorridorMatchRideIdsRef = useRef(new Set());
+  const userGpsRef = useRef(null);
 
   // Initialize notifications on mount
   useEffect(() => {
     initNotifications();
   }, []);
+
+  // Fetch device GPS location for proximity corridor matching
+  useEffect(() => {
+    if (isAuthenticated) {
+      getCurrentUserAddress()
+        .then((loc) => {
+          if (loc) userGpsRef.current = loc;
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated]);
 
   /**
    * ── 1. REAL-TIME SOCKET.IO CLIENT CONNECTION ─────────────────────────────────
@@ -116,8 +211,24 @@ export function NotificationProvider({ children }) {
       hasInitializedDriverTripsRef.current = false;
       seenDriverTripIdsRef.current.clear();
       knownPassengerTripStatusRef.current.clear();
+      seenCorridorMatchRideIdsRef.current.clear();
       return;
     }
+
+    // Hydrate seen corridor match notification IDs for this user
+    const userStorageKey = `@ecoride_notified_corridor_${user.id || user.email}`;
+    AsyncStorage.getItem(userStorageKey)
+      .then((saved) => {
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((id) => seenCorridorMatchRideIdsRef.current.add(id));
+            }
+          } catch {}
+        }
+      })
+      .catch(() => {});
 
     let isMounted = true;
 
@@ -187,6 +298,72 @@ export function NotificationProvider({ children }) {
                   pickup: ride.pickupLocation || 'Pickup Point',
                   rideId: ride.id,
                 });
+              }
+            }
+          }
+        } catch {}
+
+        // D. Corridor Match Check: Discover upcoming rides along user's commute corridor
+        try {
+          const allRides = await rideApi.all();
+          if (isMounted && Array.isArray(allRides)) {
+            const now = Date.now();
+            const currentUserId = user?.id;
+            const currentUserEmail = (user?.email || '').trim().toLowerCase();
+
+            for (const ride of allRides) {
+              if (!ride?.id || !ride?.departureTime) continue;
+
+              // 1. Never notify a driver about their own ride
+              const isMyRide =
+                (ride.driverId && ride.driverId === currentUserId) ||
+                (ride.driver?.id && ride.driver?.id === currentUserId) ||
+                (ride.driver?.email && ride.driver?.email?.trim().toLowerCase() === currentUserEmail);
+              if (isMyRide) continue;
+
+              // 2. Skip expired or cancelled rides
+              const depMs = new Date(ride.departureTime).getTime();
+              if (depMs <= now || ride.isExpired || ride.status === 'EXPIRED' || ride.status === 'CANCELLED') {
+                continue;
+              }
+
+              // 3. Skip if this user has already been alerted for this ride
+              if (seenCorridorMatchRideIdsRef.current.has(ride.id)) {
+                continue;
+              }
+
+              // 4. Test corridor match with user's home / office commute or current GPS
+              const isMatch = checkRideMatchesUserCorridor(ride, user, userGpsRef.current);
+              if (isMatch) {
+                seenCorridorMatchRideIdsRef.current.add(ride.id);
+
+                // Persist notified ID for this user so they are not spammed repeatedly
+                try {
+                  const storageKey = `@ecoride_notified_corridor_${user.id || user.email}`;
+                  const saved = await AsyncStorage.getItem(storageKey);
+                  const list = saved ? JSON.parse(saved) : [];
+                  if (!list.includes(ride.id)) {
+                    list.push(ride.id);
+                    await AsyncStorage.setItem(storageKey, JSON.stringify(list));
+                  }
+                } catch {}
+
+                const driverName =
+                  ride.driver
+                    ? `${ride.driver.firstName || ''} ${ride.driver.lastName || ''}`.trim() || ride.driver.email
+                    : 'Colleague Driver';
+
+                await triggerRouteMatch({
+                  driverName,
+                  pickup: ride.pickupLocation || 'Pickup Point',
+                  destination: ride.destination || 'Destination',
+                  fare: ride.pricePerSeat || ride.farePerSeat || 80,
+                  departureTime: formatDateTime(ride.departureTime),
+                  rideId: ride.id,
+                });
+
+                // Trigger once per polling sweep to avoid alert flood
+                break;
               }
             }
           }
