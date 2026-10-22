@@ -24,6 +24,8 @@ import { useNotification } from '../../context/NotificationContext';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage, initials } from '../../utils/format';
 import { useRideTicker, filterActiveRides } from '../../utils/rideLifecycle';
+import { getClosestRecommendedRides, getDefaultDestinationForLocation } from '../../utils/proximityService';
+import { getCurrentUserAddress } from '../../utils/location';
 import { MOCK_RIDES } from '../../mock/mockData';
 
 export default function DashboardScreen({ navigation }) {
@@ -32,19 +34,39 @@ export default function DashboardScreen({ navigation }) {
   const now = useRideTicker(15000);
   const [rides, setRides] = useState([]);
   const [trips, setTrips] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const refreshLiveGps = useCallback(async () => {
+    setLocating(true);
+    try {
+      const loc = await getCurrentUserAddress();
+      if (loc) {
+        setCurrentLocation(loc);
+      }
+    } catch (err) {
+      console.warn('GPS detection failed:', err);
+    } finally {
+      setLocating(false);
+    }
+  }, []);
 
   const load = useCallback(async (isPullRefresh = false) => {
     if (isPullRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const [myRides, myTrips] = await Promise.all([
+      const [myRides, myTrips, loc] = await Promise.all([
         rideApi.mine(),
         bookingApi.myTrips(),
+        getCurrentUserAddress().catch(() => null),
       ]);
       setRides(myRides || []);
       setTrips(myTrips || []);
+      if (loc) {
+        setCurrentLocation(loc);
+      }
     } catch (error) {
       Alert.alert('Could not load dashboard', getErrorMessage(error));
     } finally {
@@ -89,6 +111,19 @@ export default function DashboardScreen({ navigation }) {
             <Ionicons name="business-outline" size={13} color={colors.green} />
             <Text style={styles.company}>{user?.companyName || user?.email}</Text>
           </View>
+          <TouchableOpacity
+            style={styles.gpsChip}
+            onPress={refreshLiveGps}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="navigate-circle" size={13} color={colors.green} />
+            <Text style={styles.gpsChipText} numberOfLines={1}>
+              {currentLocation?.area || currentLocation?.city
+                ? `GPS: ${currentLocation.area || currentLocation.city}`
+                : locating ? 'Locating GPS...' : 'Sync GPS location'}
+            </Text>
+            <Ionicons name="refresh" size={10} color={colors.muted} />
+          </TouchableOpacity>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <TouchableOpacity
@@ -295,7 +330,7 @@ export default function DashboardScreen({ navigation }) {
         </View>
       </Card>
 
-      {/* ── 7. RECOMMENDED / AVAILABLE RIDES ───────────────────────────────── */}
+      {/* ── 7. CLOSEST RECOMMENDED CARPOOLS (SOURCE TO DESTINATION) ───────── */}
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionTitle}>Recommended For You</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Find')}>
@@ -303,15 +338,55 @@ export default function DashboardScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {filterActiveRides(MOCK_RIDES, now).slice(0, 2).map((ride) => (
-        <RideCard
-          key={ride.id}
-          ride={ride}
-          actionTitle="View Details"
-          onPress={() => navigation.navigate('RideDetails', { ride })}
-          onAction={() => navigation.navigate('RideDetails', { ride })}
-        />
-      ))}
+      {(() => {
+        const userSourceText =
+          currentLocation?.area ||
+          currentLocation?.address ||
+          user?.homeAddress ||
+          'Your Live Location';
+        const userDestination =
+          user?.officeAddress || getDefaultDestinationForLocation(currentLocation);
+        const userCoords = currentLocation?.coords || null;
+
+        const recommendedRides = getClosestRecommendedRides(
+          filterActiveRides(MOCK_RIDES, now),
+          userCoords || user?.homeAddress,
+          userDestination,
+          currentLocation,
+          2
+        );
+
+        return (
+          <>
+            {/* Live GPS Corridor recommendation alignment banner */}
+            <View style={styles.corridorRecoBanner}>
+              <View style={styles.corridorIconPill}>
+                <Ionicons name="navigate" size={13} color={colors.green} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.corridorRecoTitle}>
+                  Closest Rides Around Your Live Location
+                </Text>
+                <Text style={styles.corridorRecoSub} numberOfLines={1}>
+                  {userSourceText} → {userDestination}
+                </Text>
+              </View>
+              <Badge label="Live GPS Match" variant="green" size="sm" />
+            </View>
+
+            {recommendedRides.map((ride) => (
+              <RideCard
+                key={ride.id}
+                ride={ride}
+                matchScore={ride.matchScore}
+                actionTitle="View Details"
+                onPress={() => navigation.navigate('RideDetails', { ride })}
+                onAction={() => navigation.navigate('RideDetails', { ride })}
+              />
+            ))}
+          </>
+        );
+      })()}
 
       {/* ── 8. MY PUBLISHED RIDES / DRIVER REQUESTS ─────────────────────────── */}
       <View style={styles.sectionHeaderRow}>
@@ -396,6 +471,26 @@ const styles = StyleSheet.create({
     color: colors.green,
     fontSize: 12,
     fontWeight: '700',
+  },
+  gpsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.greenLight,
+    borderColor: colors.greenBorder,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: spacing.radiusFull,
+    alignSelf: 'flex-start',
+    marginTop: 5,
+    maxWidth: '95%',
+  },
+  gpsChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.greenText,
+    flexShrink: 1,
   },
   notifBtn: {
     padding: 4,
@@ -584,6 +679,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.green,
     fontWeight: '700',
+  },
+  corridorRecoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: spacing.radiusSm,
+    marginTop: -4,
+  },
+  corridorIconPill: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.greenLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  corridorRecoTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  corridorRecoSub: {
+    fontSize: 11,
+    color: '#15803D',
+    fontWeight: '500',
   },
   alertHubCard: {
     backgroundColor: '#FFFFFF',

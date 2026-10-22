@@ -26,7 +26,8 @@ export default function RideCard({
     : 'ED';
 
   const driverRating = ride.driverRating || ride.rating || '4.9';
-  const score = matchScore || ride.matchScore || '96% Match';
+  const rawScore = matchScore || ride.matchScore || '96% Match';
+  const score = rawScore.replace(' Route Match', ' Match');
   const isElectric = ride.vehicle?.vehicleType === 'ELECTRIC' || ride.vehicle?.model?.toLowerCase?.().includes('ev');
 
   const expired = isRideExpired(ride);
@@ -50,12 +51,20 @@ export default function RideCard({
             icon={timeRemaining.icon}
             size="sm"
           />
+          {ride.distanceLabel ? (
+            <Badge
+              label={ride.distanceLabel}
+              variant="blue"
+              icon="navigate-outline"
+              size="sm"
+            />
+          ) : null}
           <Badge label={score} variant="green" icon="sparkles-outline" size="sm" />
           {isElectric ? (
             <Badge label="Electric" variant="blue" icon="flash-outline" size="sm" />
           ) : null}
         </View>
-        <View style={styles.priceContainer}>
+        <View style={[styles.priceContainer, expired && styles.priceContainerExpired]}>
           <Text style={[styles.price, expired && styles.expiredText]}>{currency(ride.farePerSeat)}</Text>
           <Text style={styles.priceSub}>/ seat</Text>
         </View>
@@ -88,6 +97,15 @@ export default function RideCard({
           <Ionicons name="time-outline" size={14} color={colors.muted} />
           <Text style={styles.specText}>{formatDateTime(ride.departureTime)}</Text>
         </View>
+
+        {ride.distanceKm != null ? (
+          <View style={styles.specItem}>
+            <Ionicons name="navigate" size={13} color={colors.blue} />
+            <Text style={[styles.specText, { color: colors.blue, fontWeight: '700' }]}>
+              {ride.distanceKm < 1 ? `${Math.round(ride.distanceKm * 1000)}m` : `${ride.distanceKm} km`} away
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.specItem}>
           <Ionicons name="people-outline" size={14} color={colors.muted} />
@@ -153,6 +171,7 @@ const styles = StyleSheet.create({
   card: {
     padding: 16,
     gap: 12,
+    overflow: 'hidden',
   },
   expiredCard: {
     opacity: 0.88,
@@ -164,10 +183,13 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 8,
+    width: '100%',
   },
   badgeRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -176,16 +198,25 @@ const styles = StyleSheet.create({
   priceContainer: {
     flexDirection: 'row',
     alignItems: 'baseline',
+    flexShrink: 0,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.panelSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: spacing.radiusSm,
+  },
+  priceContainerExpired: {
+    backgroundColor: '#F3F4F6',
   },
   price: {
     color: colors.text,
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '800',
   },
   priceSub: {
     color: colors.muted,
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
     marginLeft: 2,
   },
   routeContainer: {

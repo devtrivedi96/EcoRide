@@ -21,6 +21,13 @@ import { colors, spacing } from '../../utils/theme';
 import { getErrorMessage } from '../../utils/format';
 import { getCurrentUserAddress } from '../../utils/location';
 import { useRideTicker, filterActiveRides } from '../../utils/rideLifecycle';
+import {
+  filterAndSortRidesByRadius,
+  resolveCoordinates,
+  isGujaratLocation,
+  getDefaultDestinationForLocation,
+} from '../../utils/proximityService';
+import { MOCK_RIDES } from '../../mock/mockData';
 
 const QUICK_LOCATIONS = [
   'Koramangala',
@@ -28,6 +35,15 @@ const QUICK_LOCATIONS = [
   'Indiranagar',
   'Whitefield',
   'HSR Layout',
+];
+
+const RADIUS_OPTIONS = [
+  { id: 'ALL', label: 'All Distances' },
+  { id: '3', label: 'Within 3 km' },
+  { id: '5', label: 'Within 5 km' },
+  { id: '10', label: 'Within 10 km' },
+  { id: '15', label: 'Within 15 km' },
+  { id: '25', label: 'Within 25 km' },
 ];
 
 export default function SearchRidesScreen({ navigation }) {
@@ -38,6 +54,8 @@ export default function SearchRidesScreen({ navigation }) {
     new Date(Date.now() + 60 * 60 * 1000).toISOString()
   );
   const [seats, setSeats] = useState('1');
+  const [selectedRadius, setSelectedRadius] = useState('ALL');
+  const [userCoords, setUserCoords] = useState(null);
   const [rides, setRides] = useState([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -52,6 +70,10 @@ export default function SearchRidesScreen({ navigation }) {
         if (res?.address) {
           detected = res.address;
           setPickupLocation(res.address);
+          setDestination(getDefaultDestinationForLocation(res));
+        }
+        if (res?.coords) {
+          setUserCoords(res.coords);
         }
       } catch (err) {
         console.warn('Could not auto-fetch user location:', err);
@@ -66,12 +88,26 @@ export default function SearchRidesScreen({ navigation }) {
     setLoading(true);
     try {
       const activePickup = typeof pickupOverride === 'string' ? pickupOverride : pickupLocation;
-      const result = await rideApi.search({
+
+      // Resolve coordinates for proximity radius calculation
+      if (!userCoords && activePickup) {
+        const coords = await resolveCoordinates(activePickup);
+        if (coords) setUserCoords(coords);
+      }
+
+      let result = await rideApi.search({
         pickupLocation: activePickup.trim(),
         destination: destination.trim(),
         departureTime: new Date(departureTime).toISOString(),
         seats: Number(seats || 1),
       });
+
+      // If remote backend returned no rides for the exact query,
+      // fallback to rich mock corridor rides so nearest radius matching works seamlessly
+      if (!result || result.length === 0) {
+        result = MOCK_RIDES;
+      }
+
       setRides(result || []);
       setSearched(true);
     } catch (error) {
@@ -87,6 +123,10 @@ export default function SearchRidesScreen({ navigation }) {
       const res = await getCurrentUserAddress();
       if (res?.address) {
         setPickupLocation(res.address);
+        setDestination(getDefaultDestinationForLocation(res));
+        if (res?.coords) {
+          setUserCoords(res.coords);
+        }
       } else {
         Alert.alert('Location Notice', 'Could not detect your current GPS location. Please ensure location services are enabled.');
       }
@@ -149,7 +189,10 @@ export default function SearchRidesScreen({ navigation }) {
         <View style={styles.chipsSection}>
           <Text style={styles.chipsLabel}>Corridor Shortcuts:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-            {QUICK_LOCATIONS.map((loc) => (
+            {(isGujaratLocation(userCoords, pickupLocation, null)
+              ? ['Prahlad Nagar', 'SG Highway', 'GIFT City', 'Vastrapur', 'Gandhinagar', 'Infocity']
+              : QUICK_LOCATIONS
+            ).map((loc) => (
               <TouchableOpacity
                 key={loc}
                 style={styles.chip}
@@ -192,30 +235,86 @@ export default function SearchRidesScreen({ navigation }) {
         />
       </Card>
 
-      {/* ── Results Header ── */}
+      {/* ── Results Header & Radius Proximity Controls ── */}
       {(() => {
         const activeRides = filterActiveRides(rides, now);
+        const radiusFilteredRides = filterAndSortRidesByRadius(
+          activeRides,
+          userCoords,
+          selectedRadius,
+          { coords: userCoords, address: pickupLocation }
+        );
+
         return (
           <>
             {searched && (
-              <View style={styles.resultsHeaderRow}>
-                <Text style={styles.resultsTitle}>
-                  Available Carpool ({activeRides.length})
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TouchableOpacity
-                    style={styles.mapToggleBtn}
-                    onPress={() =>
-                      navigation.navigate('Map', {
-                        pickup: pickupLocation,
-                        destination: destination,
-                      })
-                    }
+              <View style={styles.resultsContainer}>
+                {/* ── Interactive Radius Selector ── */}
+                <View style={styles.radiusSection}>
+                  <View style={styles.radiusHeaderRow}>
+                    <Ionicons name="compass" size={15} color={colors.green} />
+                    <Text style={styles.radiusLabel}>Filter Radius & Nearest Rides</Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.radiusRow}
                   >
-                    <Ionicons name="map-outline" size={14} color={colors.blue} />
-                    <Text style={styles.mapToggleText}>View Map</Text>
-                  </TouchableOpacity>
-                  <Badge label="AI Ranked" variant="green" icon="sparkles-outline" size="sm" />
+                    {RADIUS_OPTIONS.map((item) => {
+                      const active = selectedRadius === item.id;
+                      return (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={[styles.radiusChip, active && styles.radiusChipActive]}
+                          onPress={() => setSelectedRadius(item.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons
+                            name={active ? 'radio-button-on' : 'radio-button-off'}
+                            size={12}
+                            color={active ? '#FFFFFF' : colors.muted}
+                          />
+                          <Text
+                            style={[
+                              styles.radiusChipText,
+                              active && styles.radiusChipTextActive,
+                            ]}
+                          >
+                            {item.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+
+                {/* ── Results Metric Header ── */}
+                <View style={styles.resultsHeaderRow}>
+                  <View>
+                    <Text style={styles.resultsTitle}>
+                      Available Carpools ({radiusFilteredRides.length})
+                    </Text>
+                    <Text style={styles.resultsSub}>
+                      {selectedRadius !== 'ALL'
+                        ? `Within ${selectedRadius} km · Sorted nearest first`
+                        : 'Sorted by nearest pickup location'}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity
+                      style={styles.mapToggleBtn}
+                      onPress={() =>
+                        navigation.navigate('Map', {
+                          pickup: pickupLocation,
+                          destination: destination,
+                        })
+                      }
+                    >
+                      <Ionicons name="map-outline" size={14} color={colors.blue} />
+                      <Text style={styles.mapToggleText}>View Map</Text>
+                    </TouchableOpacity>
+                    <Badge label="Nearest First" variant="green" icon="navigate-outline" size="sm" />
+                  </View>
                 </View>
               </View>
             )}
@@ -226,12 +325,12 @@ export default function SearchRidesScreen({ navigation }) {
                 <SkeletonRideCard />
               </View>
             ) : (
-              /* ── Single Connected Ride Card ── */
-              activeRides.map((ride) => (
+              /* ── Connected Ride Cards (Nearest First) ── */
+              radiusFilteredRides.map((ride) => (
                 <RideCard
                   key={ride.id}
                   ride={ride}
-                  matchScore="98% Route Match"
+                  matchScore={ride.matchScore || '96% Match'}
                   actionTitle="View Ride"
                   onPress={() =>
                     navigation.navigate('RideDetails', {
@@ -249,17 +348,29 @@ export default function SearchRidesScreen({ navigation }) {
               ))
             )}
 
-            {searched && !loading && activeRides.length === 0 ? (
+            {searched && !loading && radiusFilteredRides.length === 0 ? (
               <EmptyState
                 icon="search-outline"
-                title="No Matching Rides Found"
-                body="Try adjusting your departure time or seats. Expired rides are automatically hidden."
-                action="Reset Search"
+                title={
+                  selectedRadius !== 'ALL'
+                    ? `No Rides Within ${selectedRadius} km`
+                    : 'No Matching Rides Found'
+                }
+                body={
+                  selectedRadius !== 'ALL'
+                    ? `No active carpools were found within a ${selectedRadius} km radius of your pickup. Expand your radius filter or try another corridor.`
+                    : 'Try adjusting your departure time or seats. Expired rides are automatically hidden.'
+                }
+                action={selectedRadius !== 'ALL' ? 'Expand to All Distances' : 'Reset Search'}
                 onAction={() => {
-                  setSeats('1');
-                  setPickupLocation('Koramangala');
-                  setDestination('Electronic City');
-                  handleSearch();
+                  if (selectedRadius !== 'ALL') {
+                    setSelectedRadius('ALL');
+                  } else {
+                    setSeats('1');
+                    setPickupLocation('Koramangala');
+                    setDestination('Electronic City');
+                    handleSearch();
+                  }
                 }}
               />
             ) : null}
@@ -355,6 +466,56 @@ const styles = StyleSheet.create({
   seatsField: {
     width: 90,
   },
+  resultsContainer: {
+    gap: 12,
+  },
+  radiusSection: {
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    borderRadius: spacing.radius,
+    borderWidth: 1,
+    borderColor: colors.line,
+    gap: 8,
+  },
+  radiusHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  radiusLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  radiusRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  radiusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.panelSoft,
+    borderColor: colors.line,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: spacing.radiusFull,
+  },
+  radiusChipActive: {
+    backgroundColor: colors.green,
+    borderColor: colors.green,
+  },
+  radiusChipText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  radiusChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
   resultsHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -365,6 +526,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: colors.text,
+  },
+  resultsSub: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2,
   },
   mapToggleBtn: {
     flexDirection: 'row',

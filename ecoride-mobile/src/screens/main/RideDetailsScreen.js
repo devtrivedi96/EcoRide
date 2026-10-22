@@ -141,6 +141,9 @@ export default function RideDetailsScreen({ route, navigation }) {
           variant={timeRemaining.badgeVariant}
           icon={timeRemaining.icon}
         />
+        {ride.distanceLabel ? (
+          <Badge label={ride.distanceLabel} variant="blue" icon="navigate-outline" />
+        ) : null}
         <Badge label={matchScore} variant="green" icon="sparkles-outline" />
         <Badge label="Direct Route" variant="blue" icon="navigate-outline" />
         <Badge label="Carbon Offset" variant="purple" icon="leaf-outline" />

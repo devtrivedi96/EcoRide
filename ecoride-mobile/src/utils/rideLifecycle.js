@@ -141,7 +141,7 @@ export function getRideTimeRemaining(departureTime, now = Date.now()) {
   return {
     isExpired: false,
     diffMs,
-    label: `Departs in ${days}d (${formatDateTime(departureTime)})`,
+    label: `Departs in ${days}d`,
     shortLabel: `in ${days}d`,
     badgeVariant: 'blue',
     badgeIcon: 'calendar-outline',
