@@ -26,7 +26,6 @@ import { currency, formatDateTime, getErrorMessage, initials } from '../../utils
 import { useRideTicker, filterActiveRides } from '../../utils/rideLifecycle';
 import { getClosestRecommendedRides, getDefaultDestinationForLocation } from '../../utils/proximityService';
 import { getCurrentUserAddress } from '../../utils/location';
-import { MOCK_RIDES } from '../../mock/mockData';
 
 export default function DashboardScreen({ navigation }) {
   const { user } = useAuth();
@@ -34,6 +33,7 @@ export default function DashboardScreen({ navigation }) {
   const now = useRideTicker(15000);
   const [rides, setRides] = useState([]);
   const [trips, setTrips] = useState([]);
+  const [availableRides, setAvailableRides] = useState([]);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -57,13 +57,15 @@ export default function DashboardScreen({ navigation }) {
     if (isPullRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const [myRides, myTrips, loc] = await Promise.all([
+      const [myRides, myTrips, allRides, loc] = await Promise.all([
         rideApi.mine(),
         bookingApi.myTrips(),
+        rideApi.all(),
         getCurrentUserAddress().catch(() => null),
       ]);
       setRides(myRides || []);
       setTrips(myTrips || []);
+      setAvailableRides(allRides || []);
       if (loc) {
         setCurrentLocation(loc);
       }
@@ -349,11 +351,11 @@ export default function DashboardScreen({ navigation }) {
         const userCoords = currentLocation?.coords || null;
 
         const recommendedRides = getClosestRecommendedRides(
-          filterActiveRides(MOCK_RIDES, now),
+          filterActiveRides(availableRides, now),
           userCoords || user?.homeAddress,
           userDestination,
           currentLocation,
-          2
+          3
         );
 
         return (
@@ -374,16 +376,33 @@ export default function DashboardScreen({ navigation }) {
               <Badge label="Live GPS Match" variant="green" size="sm" />
             </View>
 
-            {recommendedRides.map((ride) => (
-              <RideCard
-                key={ride.id}
-                ride={ride}
-                matchScore={ride.matchScore}
-                actionTitle="View Details"
-                onPress={() => navigation.navigate('RideDetails', { ride })}
-                onAction={() => navigation.navigate('RideDetails', { ride })}
-              />
-            ))}
+            {recommendedRides.length ? (
+              recommendedRides.map((ride) => (
+                <RideCard
+                  key={ride.id}
+                  ride={ride}
+                  matchScore={ride.matchScore}
+                  actionTitle="View Details"
+                  onPress={() => navigation.navigate('RideDetails', { ride })}
+                  onAction={() => navigation.navigate('RideDetails', { ride })}
+                />
+              ))
+            ) : (
+              <Card style={styles.noRecoCard}>
+                <Ionicons name="car-outline" size={28} color={colors.green} />
+                <Text style={styles.noRecoTitle}>No Carpools Offered Along Your Corridor</Text>
+                <Text style={styles.noRecoSub}>
+                  No active rides have been published between {userSourceText} and {userDestination} yet. Offer a ride to start carpooling with colleagues!
+                </Text>
+                <Button
+                  title="Offer a Ride"
+                  icon="add-circle-outline"
+                  size="sm"
+                  style={{ alignSelf: 'center', marginTop: 4 }}
+                  onPress={() => navigation.navigate('PublishRide')}
+                />
+              </Card>
+            )}
           </>
         );
       })()}
@@ -757,5 +776,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 2,
+  },
+  noRecoCard: {
+    alignItems: 'center',
+    padding: 18,
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: spacing.radiusMd,
+  },
+  noRecoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  noRecoSub: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

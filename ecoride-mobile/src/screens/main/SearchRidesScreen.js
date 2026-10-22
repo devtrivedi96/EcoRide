@@ -27,7 +27,6 @@ import {
   isGujaratLocation,
   getDefaultDestinationForLocation,
 } from '../../utils/proximityService';
-import { MOCK_RIDES } from '../../mock/mockData';
 
 const QUICK_LOCATIONS = [
   'Koramangala',
@@ -103,9 +102,9 @@ export default function SearchRidesScreen({ navigation }) {
       });
 
       // If remote backend returned no rides for the exact query,
-      // fallback to rich mock corridor rides so nearest radius matching works seamlessly
+      // fallback to all available active rides so nearest radius matching works seamlessly
       if (!result || result.length === 0) {
-        result = MOCK_RIDES;
+        result = await rideApi.all();
       }
 
       setRides(result || []);

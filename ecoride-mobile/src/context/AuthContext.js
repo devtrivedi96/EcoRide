@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi } from '../api/authApi';
 import { userApi } from '../api/userApi';
 import { MOCK_MODE, STORAGE_KEYS } from '../api/config';
-import { MOCK_USER, MOCK_TOKEN } from '../mock/mockData';
 
 const AuthContext = createContext(null);
 
@@ -183,12 +182,6 @@ export function AuthProvider({ children }) {
         } catch {
           // Fall through to unauthenticated
         }
-      }
-
-      if (MOCK_MODE) {
-        // Fallback for mock mode if nothing saved
-        setToken(MOCK_TOKEN);
-        setUser(MOCK_USER);
       }
     } catch (e) {
       console.warn('Failed restoring session:', e);

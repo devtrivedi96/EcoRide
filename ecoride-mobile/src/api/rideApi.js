@@ -6,6 +6,7 @@ import { KNOWN_DB_VEHICLES } from './vehicleApi';
 import { getRideStatus, isRideExpired } from '../utils/rideLifecycle';
 
 const RIDES_STORAGE_PREFIX = '@ecoride_my_rides_';
+const SHARED_ALL_RIDES_KEY = '@ecoride_shared_all_rides';
 
 async function getCurrentUser() {
   try {
@@ -22,6 +23,26 @@ function getUserKey(user) {
 
 function getLocalRidesKey(userKey) {
   return `${RIDES_STORAGE_PREFIX}${userKey}`;
+}
+
+async function getSharedRides() {
+  try {
+    const raw = await AsyncStorage.getItem(SHARED_ALL_RIDES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+async function saveSharedRide(ride) {
+  if (!ride || !ride.id) return;
+  try {
+    const existing = await getSharedRides();
+    const updated = [ride, ...existing.filter((r) => r && r.id !== ride.id)];
+    await AsyncStorage.setItem(SHARED_ALL_RIDES_KEY, JSON.stringify(updated));
+  } catch {}
 }
 
 async function getLocalRides(userKey) {
@@ -43,6 +64,7 @@ async function saveLocalRide(ride, userKey) {
     const existing = await getLocalRides(userKey);
     const updated = [ride, ...existing.filter((r) => r && r.id !== ride.id)];
     await AsyncStorage.setItem(getLocalRidesKey(userKey), JSON.stringify(updated));
+    await saveSharedRide(ride);
   } catch {}
 }
 
@@ -56,6 +78,55 @@ async function removeLocalRide(rideId, userKey) {
 }
 
 const realRideApi = {
+  all: async () => {
+    let serverResults = [];
+    try {
+      const res = await api.get('/rides');
+      if (Array.isArray(res.data)) {
+        serverResults = res.data;
+      }
+    } catch {}
+
+    let sharedRides = [];
+    try {
+      sharedRides = await getSharedRides();
+    } catch {}
+
+    const now = Date.now();
+    const seen = new Set();
+    const merged = [];
+
+    for (const r of serverResults) {
+      if (r && r.id && !seen.has(r.id)) {
+        const enriched = {
+          ...r,
+          status: getRideStatus(r, now),
+          isExpired: isRideExpired(r, now),
+        };
+        if (!enriched.isExpired && enriched.status !== 'CANCELLED') {
+          seen.add(r.id);
+          merged.push(enriched);
+        }
+      }
+    }
+
+    for (const r of sharedRides) {
+      if (r && r.id && !seen.has(r.id)) {
+        const enriched = {
+          ...r,
+          status: getRideStatus(r, now),
+          isExpired: isRideExpired(r, now),
+        };
+        if (!enriched.isExpired && enriched.status === 'ACTIVE') {
+          seen.add(r.id);
+          merged.push(enriched);
+        }
+      }
+    }
+
+    return merged;
+  },
+
   search: async ({ pickupLocation, destination, departureTime, seats = 1 }) => {
     let serverResults = [];
     try {
@@ -67,12 +138,9 @@ const realRideApi = {
       }
     } catch {}
 
-    // Include active local rides for the current user if matching
-    let userLocalRides = [];
+    let candidateSharedRides = [];
     try {
-      const currentUser = await getCurrentUser();
-      const userKey = getUserKey(currentUser);
-      userLocalRides = await getLocalRides(userKey);
+      candidateSharedRides = await getSharedRides();
     } catch {}
 
     const now = Date.now();
@@ -95,8 +163,8 @@ const realRideApi = {
       }
     }
 
-    // Include local rides if active and non-expired
-    for (const r of userLocalRides) {
+    // Include shared published rides across drivers if matching
+    for (const r of candidateSharedRides) {
       if (r && r.id && !seen.has(r.id)) {
         const enriched = {
           ...r,

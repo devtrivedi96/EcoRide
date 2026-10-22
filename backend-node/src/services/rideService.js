@@ -55,6 +55,8 @@ async function publishRide(userEmail, body) {
     const io = getIo();
     io.emit('route-match-found', {
       rideId: ride.id,
+      driverId: driver.id,
+      driverEmail: driver.email,
       driverName: `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || driver.email,
       pickup: ride.pickupLocation,
       destination: ride.destination,
@@ -93,6 +95,24 @@ async function searchRides(pickup, destination, time, seats = 1) {
   });
 
   return Promise.all(filtered.map(r => enrichRide(r)));
+}
+
+async function getAllAvailableRides() {
+  const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const db = getDb();
+  const snap = await db.collection(COLLECTIONS.RIDES)
+    .where('departureTime', '>=', now)
+    .get();
+
+  const rides = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const active = rides.filter(r => {
+    const isPast = new Date(r.departureTime).getTime() <= nowMs;
+    const isInactive = r.status === 'EXPIRED' || r.status === 'CANCELLED' || r.status === 'COMPLETED';
+    return !isPast && !isInactive && (r.availableSeats || 0) > 0;
+  });
+
+  return Promise.all(active.map(r => enrichRide(r)));
 }
 
 async function getAvailableLocations() {
@@ -302,6 +322,7 @@ function mapToDto(ride, driver, vehicle, trips = [], company = null) {
 module.exports = {
   publishRide,
   searchRides,
+  getAllAvailableRides,
   getAvailableLocations,
   getDriverRides,
   updateMyRide,

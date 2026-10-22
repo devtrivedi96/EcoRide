@@ -10,7 +10,7 @@ const rideService = require('../services/rideService');
 // GET /api/rides — List all available/upcoming rides
 router.get('/', authenticate, async (req, res, next) => {
   try {
-    const rides = await rideService.getAvailableLocations();
+    const rides = await rideService.getAllAvailableRides();
     res.json(rides);
   } catch (err) { next(err); }
 });

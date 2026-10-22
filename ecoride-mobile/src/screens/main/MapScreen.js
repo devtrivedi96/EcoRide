@@ -35,7 +35,8 @@ import {
   PointAnnotation,
   requestAndroidLocationPermissions,
 } from '@maplibre/maplibre-react-native';
-import { MOCK_MAP_MARKERS } from '../../mock/mockData';
+import { rideApi } from '../../api/rideApi';
+import { resolveCoordinates } from '../../utils/proximityService';
 import { colors } from '../../utils/theme';
 
 // ── OpenFreeMap — 100% free, no API key ──────────────────────────────────────
@@ -374,6 +375,9 @@ export default function MapScreen({ route, navigation }) {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const debounceTimerRef = useRef(null);
 
+  // Available real ride pins
+  const [rideMarkers, setRideMarkers] = useState([]);
+
   // Default center
   const [centerCoord, setCenterCoord] = useState([72.5714, 23.0225]); // [lng, lat] (Ahmedabad / user city)
 
@@ -424,6 +428,37 @@ export default function MapScreen({ route, navigation }) {
         }
       }
     })();
+  }, []);
+
+  // ── Load Real Active Rides for Map Pins ──────────────────────────────────────
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const allRides = await rideApi.all();
+        if (!isMounted || !Array.isArray(allRides)) return;
+        const markers = [];
+        for (const r of allRides.slice(0, 15)) {
+          let coords = r.pickupCoords;
+          if ((!coords || !coords.lat) && r.pickupLocation) {
+            coords = await resolveCoordinates(r.pickupLocation);
+          }
+          if (coords?.lat && coords?.lng) {
+            markers.push({
+              id: `ride-${r.id}`,
+              title: `${r.pickupLocation} → ${r.destination}`,
+              latitude: Number(coords.lat),
+              longitude: Number(coords.lng),
+              ride: r,
+            });
+          }
+        }
+        if (isMounted) setRideMarkers(markers);
+      } catch (err) {
+        console.warn('Could not load map ride markers:', err);
+      }
+    })();
+    return () => { isMounted = false; };
   }, []);
 
   // ── Auto-route if navigated with parameters (from Search or RideDetails) ────
@@ -728,19 +763,24 @@ export default function MapScreen({ route, navigation }) {
           </PointAnnotation>
         )}
 
-        {/* Mock ride markers */}
-        {MOCK_MAP_MARKERS.map(m => (
+        {/* Real active ride markers on map */}
+        {rideMarkers.map(m => (
           <PointAnnotation
             key={m.id}
             id={m.id}
             coordinate={[m.longitude, m.latitude]}
             title={m.title}
+            onSelected={() => {
+              if (m.ride?.pickupLocation) setFrom(m.ride.pickupLocation);
+              if (m.ride?.destination) setTo(m.ride.destination);
+              if (m.ride?.pickupLocation && m.ride?.destination) {
+                findRoute(m.ride.destination, null, null, m.ride.pickupLocation);
+              }
+            }}
           >
-            <View style={[styles.ridePin, {
-              backgroundColor:
-                m.type === 'destination' ? colors.amber :
-                m.type === 'myRide'      ? colors.blue  : colors.brown,
-            }]} />
+            <View style={[styles.ridePin, { backgroundColor: colors.green }]}>
+              <Ionicons name="car" size={13} color="#fff" />
+            </View>
           </PointAnnotation>
         ))}
       </MapView>
@@ -1039,7 +1079,8 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   ridePin: {
-    width: 14, height: 14, borderRadius: 7,
+    width: 24, height: 24, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#fff',
     elevation: 4,
   },
