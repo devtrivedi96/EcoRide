@@ -20,6 +20,7 @@ import { SkeletonRideCard } from '../../components/Skeleton';
 import { colors, spacing } from '../../utils/theme';
 import { getErrorMessage } from '../../utils/format';
 import { getCurrentUserAddress } from '../../utils/location';
+import { useRideTicker, filterActiveRides } from '../../utils/rideLifecycle';
 
 const QUICK_LOCATIONS = [
   'Koramangala',
@@ -30,6 +31,7 @@ const QUICK_LOCATIONS = [
 ];
 
 export default function SearchRidesScreen({ navigation }) {
+  const now = useRideTicker(15000);
   const [pickupLocation, setPickupLocation] = useState('');
   const [destination, setDestination] = useState('Electronic City');
   const [departureTime, setDepartureTime] = useState(
@@ -191,72 +193,79 @@ export default function SearchRidesScreen({ navigation }) {
       </Card>
 
       {/* ── Results Header ── */}
-      {searched && (
-        <View style={styles.resultsHeaderRow}>
-          <Text style={styles.resultsTitle}>
-            Available Carpool ({rides.length})
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity
-              style={styles.mapToggleBtn}
-              onPress={() =>
-                navigation.navigate('Map', {
-                  pickup: pickupLocation,
-                  destination: destination,
-                })
-              }
-            >
-              <Ionicons name="map-outline" size={14} color={colors.blue} />
-              <Text style={styles.mapToggleText}>View Map</Text>
-            </TouchableOpacity>
-            <Badge label="AI Ranked" variant="green" icon="sparkles-outline" size="sm" />
-          </View>
-        </View>
-      )}
+      {(() => {
+        const activeRides = filterActiveRides(rides, now);
+        return (
+          <>
+            {searched && (
+              <View style={styles.resultsHeaderRow}>
+                <Text style={styles.resultsTitle}>
+                  Available Carpool ({activeRides.length})
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    style={styles.mapToggleBtn}
+                    onPress={() =>
+                      navigation.navigate('Map', {
+                        pickup: pickupLocation,
+                        destination: destination,
+                      })
+                    }
+                  >
+                    <Ionicons name="map-outline" size={14} color={colors.blue} />
+                    <Text style={styles.mapToggleText}>View Map</Text>
+                  </TouchableOpacity>
+                  <Badge label="AI Ranked" variant="green" icon="sparkles-outline" size="sm" />
+                </View>
+              </View>
+            )}
 
-      {/* ── Skeleton Loading State ── */}
-      {loading ? (
-        <View style={{ gap: 14 }}>
-          <SkeletonRideCard />
-        </View>
-      ) : (
-        /* ── Single Connected Ride Card ── */
-        rides.map((ride) => (
-          <RideCard
-            key={ride.id}
-            ride={ride}
-            matchScore="98% Route Match"
-            actionTitle="View Ride"
-            onPress={() =>
-              navigation.navigate('RideDetails', {
-                ride,
-                searchSeats: Number(seats || 1),
-              })
-            }
-            onAction={() =>
-              navigation.navigate('RideDetails', {
-                ride,
-                searchSeats: Number(seats || 1),
-              })
-            }
-          />
-        ))
-      )}
+            {/* ── Skeleton Loading State ── */}
+            {loading ? (
+              <View style={{ gap: 14 }}>
+                <SkeletonRideCard />
+              </View>
+            ) : (
+              /* ── Single Connected Ride Card ── */
+              activeRides.map((ride) => (
+                <RideCard
+                  key={ride.id}
+                  ride={ride}
+                  matchScore="98% Route Match"
+                  actionTitle="View Ride"
+                  onPress={() =>
+                    navigation.navigate('RideDetails', {
+                      ride,
+                      searchSeats: Number(seats || 1),
+                    })
+                  }
+                  onAction={() =>
+                    navigation.navigate('RideDetails', {
+                      ride,
+                      searchSeats: Number(seats || 1),
+                    })
+                  }
+                />
+              ))
+            )}
 
-      {searched && !loading && rides.length === 0 ? (
-        <EmptyState
-          icon="search-outline"
-          title="No Matching Rides Found"
-          body="Try adjusting your departure time or seats."
-          action="Reset Search"
-          onAction={() => {
-            setSeats('1');
-            setPickupLocation('Koramangala');
-            setDestination('Electronic City');
-            handleSearch();
-          }}
-        />
-      ) : null}
+            {searched && !loading && activeRides.length === 0 ? (
+              <EmptyState
+                icon="search-outline"
+                title="No Matching Rides Found"
+                body="Try adjusting your departure time or seats. Expired rides are automatically hidden."
+                action="Reset Search"
+                onAction={() => {
+                  setSeats('1');
+                  setPickupLocation('Koramangala');
+                  setDestination('Electronic City');
+                  handleSearch();
+                }}
+              />
+            ) : null}
+          </>
+        );
+      })()}
     </Screen>
   );
 }

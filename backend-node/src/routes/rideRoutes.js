@@ -53,6 +53,14 @@ router.put('/:id', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// PATCH /api/rides/:id/status — Update ride status (e.g. STARTED, COMPLETED, CANCELLED, EXPIRED)
+router.patch('/:id/status', authenticate, async (req, res, next) => {
+  try {
+    const status = req.body?.status || req.query?.status;
+    res.json(await rideService.updateRideStatus(req.params.id, req.user.email, status));
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/rides/:id — Delete a ride
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {

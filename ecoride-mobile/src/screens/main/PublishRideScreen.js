@@ -175,9 +175,13 @@ export default function PublishRideScreen({ route, navigation }) {
       if (!selectedVehId && userVehicles.length > 0) {
         selectedVehId = userVehicles[0].id;
       }
+      const matchedVeh = userVehicles.find((v) => v.id === selectedVehId) || userVehicles[0];
 
       const payload = {
         vehicleId: selectedVehId,
+        vehicleModel: matchedVeh?.model || 'Electric Commute Car',
+        vehicleRegistration: matchedVeh?.registrationNumber || 'KA-01-ER-1000',
+        vehicleType: matchedVeh?.vehicleType || 'ELECTRIC',
         pickupLocation: form.pickupLocation.trim(),
         destination: form.destination.trim(),
         departureTime: new Date(form.departureTime).toISOString(),

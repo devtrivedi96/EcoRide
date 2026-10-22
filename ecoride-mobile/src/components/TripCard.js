@@ -10,6 +10,8 @@ import { currency, formatDateTime } from '../utils/format';
 export default function TripCard({ trip, actions = [], onPress }) {
   const ride = trip.ride || {};
 
+  const isRidePast = ride.departureTime && new Date(ride.departureTime).getTime() <= Date.now();
+
   const getStatusVariant = (status) => {
     switch (status) {
       case 'ACCEPTED':
@@ -17,6 +19,9 @@ export default function TripCard({ trip, actions = [], onPress }) {
       case 'STARTED':
         return { variant: 'blue', label: 'In Transit · Live', icon: 'navigate-outline' };
       case 'PENDING':
+        if (isRidePast) {
+          return { variant: 'red', label: 'Departed · Expired', icon: 'time-outline' };
+        }
         return { variant: 'amber', label: 'Pending Approval', icon: 'hourglass-outline' };
       case 'COMPLETED':
         return { variant: 'green', label: 'Completed', icon: 'checkmark-done-outline' };

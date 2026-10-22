@@ -23,11 +23,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage, initials } from '../../utils/format';
+import { useRideTicker, filterActiveRides } from '../../utils/rideLifecycle';
 import { MOCK_RIDES } from '../../mock/mockData';
 
 export default function DashboardScreen({ navigation }) {
   const { user } = useAuth();
   const { simulateDriverAlert, simulateRouteMatch } = useNotification();
+  const now = useRideTicker(15000);
   const [rides, setRides] = useState([]);
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -301,7 +303,7 @@ export default function DashboardScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {MOCK_RIDES.slice(0, 2).map((ride) => (
+      {filterActiveRides(MOCK_RIDES, now).slice(0, 2).map((ride) => (
         <RideCard
           key={ride.id}
           ride={ride}

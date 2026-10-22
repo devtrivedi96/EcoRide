@@ -5,8 +5,10 @@ import {
   initNotifications,
   sendDriverBookingNotification,
   sendRouteMatchNotification,
+  sendRideExpiredNotification,
 } from '../services/notificationService';
 import { bookingApi } from '../api/bookingApi';
+import { rideApi } from '../api/rideApi';
 import { SOCKET_URL, MOCK_MODE } from '../api/config';
 import { useAuth } from './AuthContext';
 import { navigate } from '../navigation/navigationRef';
@@ -22,6 +24,7 @@ export function NotificationProvider({ children }) {
   const seenDriverTripIdsRef = useRef(new Set());
   const hasInitializedDriverTripsRef = useRef(false);
   const knownPassengerTripStatusRef = useRef(new Map());
+  const notifiedExpiredRidesRef = useRef(new Set());
 
   // Initialize notifications on mount
   useEffect(() => {
@@ -75,6 +78,13 @@ export function NotificationProvider({ children }) {
         if (!data) return;
         if (data.driverId && data.driverId === user?.id) return; // Ignore own rides
         triggerRouteMatch(data);
+      });
+
+      // Listen for ride expiration broadcasts
+      socket.on('ride-expired', (data) => {
+        if (data?.rideId) {
+          notifiedExpiredRidesRef.current.add(data.rideId);
+        }
       });
 
       // Listen for passenger booking confirmations
@@ -161,6 +171,26 @@ export function NotificationProvider({ children }) {
             knownPassengerTripStatusRef.current.set(trip.id, trip.status);
           });
         }
+
+        // C. Ride Expiration Check: Monitor driver's offered rides in real-time
+        try {
+          const myRides = await rideApi.mine();
+          if (isMounted && Array.isArray(myRides)) {
+            const now = Date.now();
+            for (const ride of myRides) {
+              if (!ride?.id || !ride?.departureTime) continue;
+              const depMs = new Date(ride.departureTime).getTime();
+              if (depMs <= now && !notifiedExpiredRidesRef.current.has(ride.id)) {
+                notifiedExpiredRidesRef.current.add(ride.id);
+                sendRideExpiredNotification({
+                  destination: ride.destination || 'Destination',
+                  pickup: ride.pickupLocation || 'Pickup Point',
+                  rideId: ride.id,
+                });
+              }
+            }
+          }
+        } catch {}
       } catch (err) {
         // Silent sync catch
       }
@@ -189,6 +219,12 @@ export function NotificationProvider({ children }) {
   function notifyRidePublished(rideData) {
     if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('ride-published', rideData);
+    }
+  }
+
+  function notifyRideExpired(rideId) {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('ride-expired', { rideId });
     }
   }
 
@@ -335,6 +371,7 @@ export function NotificationProvider({ children }) {
         dismissRouteMatch,
         notifyRideBooked,
         notifyRidePublished,
+        notifyRideExpired,
         simulateDriverAlert,
         simulateRouteMatch,
       }}

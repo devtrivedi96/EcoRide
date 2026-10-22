@@ -18,11 +18,23 @@ import Screen from '../../components/Screen';
 import MiniRouteMap from '../../components/MiniRouteMap';
 import { colors, spacing } from '../../utils/theme';
 import { currency, formatDateTime, getErrorMessage } from '../../utils/format';
+import {
+  useRideTicker,
+  isRideExpired,
+  getRideTimeRemaining,
+  getRideStatus,
+} from '../../utils/rideLifecycle';
 
 export default function RideDetailsScreen({ route, navigation }) {
   const { user } = useAuth();
   const { notifyRideBooked } = useNotification();
   const { ride, searchSeats = 1 } = route.params || {};
+
+  // Real-time ticker to re-evaluate ride departure and expiration every 10 seconds
+  const now = useRideTicker(10000);
+  const expired = isRideExpired(ride, now);
+  const timeRemaining = getRideTimeRemaining(ride?.departureTime, now);
+  const rideStatus = getRideStatus(ride, now);
 
   const isMyRide = Boolean(
     user &&
@@ -69,6 +81,13 @@ export default function RideDetailsScreen({ route, navigation }) {
   const co2SavedKg = (1.4 * (selectedSeats || 1) * 3.2).toFixed(1);
 
   async function handleBookRide() {
+    if (expired) {
+      Alert.alert(
+        'Ride Departed / Expired',
+        'This carpool has already departed its scheduled time. Bookings are closed.'
+      );
+      return;
+    }
     if (isMyRide) {
       Alert.alert('Notice', 'You are the driver of this ride. You cannot book your own ride, but you can manage it from Driver Trips.');
       return;
@@ -117,10 +136,28 @@ export default function RideDetailsScreen({ route, navigation }) {
     <Screen contentStyle={styles.content}>
       {/* ── Top Match & Status Banner ── */}
       <View style={styles.topRow}>
+        <Badge
+          label={timeRemaining.label}
+          variant={timeRemaining.badgeVariant}
+          icon={timeRemaining.icon}
+        />
         <Badge label={matchScore} variant="green" icon="sparkles-outline" />
         <Badge label="Direct Route" variant="blue" icon="navigate-outline" />
         <Badge label="Carbon Offset" variant="purple" icon="leaf-outline" />
       </View>
+
+      {/* ── Expired / Departed Alert Banner ── */}
+      {expired ? (
+        <View style={styles.expiredNoticeBox}>
+          <Ionicons name="alert-circle" size={24} color={colors.danger} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.expiredNoticeTitle}>Carpool Departed / Expired</Text>
+            <Text style={styles.expiredNoticeSub}>
+              The departure time ({formatDateTime(ride.departureTime)}) has passed. Bookings and reservations are now closed.
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {/* ── Route Timeline Card ── */}
       <Card style={styles.routeCard}>
@@ -285,22 +322,22 @@ export default function RideDetailsScreen({ route, navigation }) {
       </Card>
 
       {/* ── Seat Selection & Pricing ── */}
-      <Card style={styles.bookingCard}>
+      <Card style={[styles.bookingCard, expired && styles.bookingCardExpired]}>
         <View style={styles.seatSelectorRow}>
           <View>
             <Text style={styles.seatSelectorTitle}>Reserve Seats</Text>
             <Text style={styles.seatSelectorSub}>
-              {ride.availableSeats ?? 0} seats remaining
+              {expired ? 'Booking closed (Ride expired)' : `${ride.availableSeats ?? 0} seats remaining`}
             </Text>
           </View>
 
           <View style={styles.stepper}>
             <TouchableOpacity
               onPress={() => setSelectedSeats((s) => Math.max(1, s - 1))}
-              disabled={selectedSeats <= 1}
-              style={[styles.stepperBtn, selectedSeats <= 1 && styles.stepperBtnDisabled]}
+              disabled={expired || selectedSeats <= 1}
+              style={[styles.stepperBtn, (expired || selectedSeats <= 1) && styles.stepperBtnDisabled]}
             >
-              <Ionicons name="remove" size={18} color={selectedSeats <= 1 ? colors.subtle : colors.text} />
+              <Ionicons name="remove" size={18} color={(expired || selectedSeats <= 1) ? colors.subtle : colors.text} />
             </TouchableOpacity>
 
             <Text style={styles.stepperCount}>{selectedSeats}</Text>
@@ -309,17 +346,17 @@ export default function RideDetailsScreen({ route, navigation }) {
               onPress={() =>
                 setSelectedSeats((s) => Math.min(ride.availableSeats || 4, s + 1))
               }
-              disabled={selectedSeats >= (ride.availableSeats || 1)}
+              disabled={expired || selectedSeats >= (ride.availableSeats || 1)}
               style={[
                 styles.stepperBtn,
-                selectedSeats >= (ride.availableSeats || 1) && styles.stepperBtnDisabled,
+                (expired || selectedSeats >= (ride.availableSeats || 1)) && styles.stepperBtnDisabled,
               ]}
             >
               <Ionicons
                 name="add"
                 size={18}
                 color={
-                  selectedSeats >= (ride.availableSeats || 1)
+                  (expired || selectedSeats >= (ride.availableSeats || 1))
                     ? colors.subtle
                     : colors.text
                 }
@@ -335,7 +372,9 @@ export default function RideDetailsScreen({ route, navigation }) {
             </Text>
             <Text style={styles.totalFareText}>Total Contribution</Text>
           </View>
-          <Text style={styles.totalFareAmount}>{currency(totalFare)}</Text>
+          <Text style={[styles.totalFareAmount, expired && { color: colors.muted }]}>
+            {currency(totalFare)}
+          </Text>
         </View>
 
         {isMyRide ? (
@@ -344,6 +383,14 @@ export default function RideDetailsScreen({ route, navigation }) {
             icon="people-outline"
             size="lg"
             onPress={() => navigation.navigate('DriverTrips')}
+          />
+        ) : expired ? (
+          <Button
+            title="Ride Departed • Bookings Closed"
+            icon="time-outline"
+            variant="outline"
+            disabled
+            size="lg"
           />
         ) : (
           <Button
@@ -587,6 +634,31 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.greenBorder,
     gap: 16,
+  },
+  bookingCardExpired: {
+    borderColor: colors.lineDark,
+    backgroundColor: '#F9FAFB',
+  },
+  expiredNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1.5,
+    padding: 12,
+    borderRadius: spacing.radiusSm,
+  },
+  expiredNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#B91C1C',
+  },
+  expiredNoticeSub: {
+    fontSize: 12,
+    color: '#991B1B',
+    marginTop: 2,
+    lineHeight: 16,
   },
   seatSelectorRow: {
     flexDirection: 'row',

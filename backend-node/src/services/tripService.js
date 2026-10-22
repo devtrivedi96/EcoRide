@@ -32,6 +32,12 @@ async function bookTrip(userEmail, body) {
     const ride = { id: rideDoc.id, ...rideDoc.data() };
 
     if (ride.driverId === passenger.id) throw new Error('Driver cannot book their own ride');
+    if (new Date(ride.departureTime).getTime() <= Date.now() || ride.status === 'EXPIRED') {
+      throw new Error('This ride has already departed and expired');
+    }
+    if (ride.status === 'CANCELLED' || ride.status === 'COMPLETED') {
+      throw new Error('This ride is no longer active for booking');
+    }
     if (ride.availableSeats < seats) throw new Error('Not enough available seats');
 
     const totalFare = parseFloat(ride.farePerSeat) * seats;

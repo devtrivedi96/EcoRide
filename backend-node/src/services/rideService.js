@@ -33,6 +33,7 @@ async function publishRide(userEmail, body) {
   const seats = body.availableSeats ?? body.available_seats;
   if (seats > vehicle.seatingCapacity) throw new Error('Available seats cannot exceed vehicle capacity');
 
+  const nowIso = new Date().toISOString();
   const ride = await create(COLLECTIONS.RIDES, {
     driverId: driver.id,
     vehicleId: vehicle.id,
@@ -42,6 +43,9 @@ async function publishRide(userEmail, body) {
     availableSeats: seats,
     farePerSeat: parseFloat(body.farePerSeat || body.fare_per_seat),
     routeWaypoints: body.routeWaypoints || body.route_waypoints || null,
+    status: 'ACTIVE',
+    createdAt: nowIso,
+    updatedAt: nowIso,
   });
 
   const dto = mapToDto(ride, driver, vehicle, []);
@@ -65,19 +69,28 @@ async function publishRide(userEmail, body) {
 }
 
 async function searchRides(pickup, destination, time, seats = 1) {
-  // Firestore: filter by departureTime >= time, then filter seats & location in memory
   const db = getDb();
+  const searchTime = time ? new Date(time).toISOString() : new Date().toISOString();
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+
   const snap = await db.collection(COLLECTIONS.RIDES)
-    .where('departureTime', '>=', new Date(time).toISOString())
+    .where('departureTime', '>=', searchTime)
     .get();
 
   const rides = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  const filtered = rides.filter(r =>
-    r.availableSeats >= parseInt(seats) &&
-    r.pickupLocation.toLowerCase().includes(pickup.toLowerCase()) &&
-    r.destination.toLowerCase().includes(destination.toLowerCase())
-  );
+  const filtered = rides.filter(r => {
+    const isPastDeparture = new Date(r.departureTime).getTime() <= nowMs;
+    const isInactive = r.status === 'EXPIRED' || r.status === 'CANCELLED' || r.status === 'COMPLETED';
+    if (isPastDeparture || isInactive) return false;
+
+    return (
+      r.availableSeats >= parseInt(seats) &&
+      r.pickupLocation.toLowerCase().includes(pickup.toLowerCase()) &&
+      r.destination.toLowerCase().includes(destination.toLowerCase())
+    );
+  });
 
   return Promise.all(filtered.map(r => enrichRide(r)));
 }
@@ -158,6 +171,60 @@ async function deleteRide(id, userEmail) {
   await remove(COLLECTIONS.RIDES, id);
 }
 
+async function updateRideStatus(id, userEmail, newStatus) {
+  const ride = await findById(COLLECTIONS.RIDES, id);
+  if (!ride) throw new Error('Ride not found');
+
+  const driver = await findOne(COLLECTIONS.USERS, 'email', userEmail);
+  if (ride.driverId !== driver.id) throw new Error('Unauthorized to update this ride status');
+
+  const validStatuses = ['ACTIVE', 'STARTED', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
+  const statusUpper = (newStatus || '').toUpperCase();
+  if (!validStatuses.includes(statusUpper)) {
+    throw new Error(`Invalid status: ${newStatus}. Must be one of: ${validStatuses.join(', ')}`);
+  }
+
+  const updated = await update(COLLECTIONS.RIDES, id, {
+    status: statusUpper,
+    updatedAt: new Date().toISOString(),
+  });
+
+  // If cancelled or expired, handle associated trips
+  if (statusUpper === 'CANCELLED' || statusUpper === 'EXPIRED') {
+    const trips = await findAll(COLLECTIONS.TRIPS, [['rideId', '==', id]]);
+    const db = getDb();
+    const batch = db.batch();
+    trips.forEach((t) => {
+      if (t.status === 'PENDING') {
+        batch.update(db.collection(COLLECTIONS.TRIPS).doc(t.id), {
+          status: statusUpper === 'CANCELLED' ? 'CANCELLED' : 'EXPIRED',
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    });
+    await batch.commit().catch(() => {});
+  }
+
+  const enriched = await enrichRide(updated);
+
+  try {
+    const { getIo } = require('../config/socket');
+    const io = getIo();
+    io.emit('ride-status-changed', {
+      rideId: id,
+      status: statusUpper,
+      departureTime: ride.departureTime,
+    });
+    if (statusUpper === 'EXPIRED') {
+      io.emit('ride-expired', { rideId: id });
+    }
+  } catch (err) {
+    // Non-fatal if socket not ready
+  }
+
+  return enriched;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 async function enrichRide(ride) {
@@ -180,6 +247,16 @@ async function enrichRide(ride) {
 }
 
 function mapToDto(ride, driver, vehicle, trips = [], company = null) {
+  const depTime = ride.departureTime ? new Date(ride.departureTime).getTime() : 0;
+  const isExpired = depTime > 0 && depTime <= Date.now();
+
+  let computedStatus = ride.status || 'ACTIVE';
+  if (computedStatus === 'ACTIVE' && isExpired) {
+    computedStatus = 'EXPIRED';
+  } else if (computedStatus === 'ACTIVE' && Number(ride.availableSeats ?? 1) <= 0) {
+    computedStatus = 'FULL';
+  }
+
   return {
     id: ride.id,
     driver: driver ? {
@@ -195,6 +272,7 @@ function mapToDto(ride, driver, vehicle, trips = [], company = null) {
       model: vehicle.model,
       registrationNumber: vehicle.registrationNumber,
       seatingCapacity: vehicle.seatingCapacity,
+      vehicleType: vehicle.vehicleType || 'ELECTRIC',
     } : null,
     pickupLocation: ride.pickupLocation,
     destination: ride.destination,
@@ -202,6 +280,9 @@ function mapToDto(ride, driver, vehicle, trips = [], company = null) {
     availableSeats: ride.availableSeats,
     farePerSeat: ride.farePerSeat,
     routeWaypoints: ride.routeWaypoints,
+    status: computedStatus,
+    isExpired,
+    createdAt: ride.createdAt || null,
     trips: trips.map(t => ({
       id: t.id,
       passenger: t.passenger ? {
@@ -218,4 +299,12 @@ function mapToDto(ride, driver, vehicle, trips = [], company = null) {
   };
 }
 
-module.exports = { publishRide, searchRides, getAvailableLocations, getDriverRides, updateMyRide, deleteRide };
+module.exports = {
+  publishRide,
+  searchRides,
+  getAvailableLocations,
+  getDriverRides,
+  updateMyRide,
+  updateRideStatus,
+  deleteRide,
+};

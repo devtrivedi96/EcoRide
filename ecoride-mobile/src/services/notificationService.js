@@ -192,3 +192,38 @@ export async function sendRouteMatchNotification({
     console.log('Route match notification notice:', err?.message);
   }
 }
+
+/**
+ * Ride Expired Notification: Notifies driver or commuters when a ride reaches expiration.
+ */
+export async function sendRideExpiredNotification({
+  destination = 'Destination',
+  pickup = 'Pickup Point',
+  rideId,
+}) {
+  try {
+    Vibration.vibrate([0, 150, 100, 150]);
+
+    if (!Notifications || typeof Notifications.scheduleNotificationAsync !== 'function') {
+      return;
+    }
+
+    await initNotifications();
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `⏰ Ride Departed & Closed`,
+        body: `Your corporate ride ${pickup} → ${destination} has reached departure time and is now expired.`,
+        data: {
+          type: 'ride-expired',
+          rideId,
+        },
+        sound: 'default',
+        channelId: 'route-matches',
+      },
+      trigger: null,
+    });
+  } catch (err) {
+    console.log('Ride expired notification notice:', err?.message);
+  }
+}

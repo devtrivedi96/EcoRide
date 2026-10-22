@@ -6,6 +6,7 @@ import Card from './Card';
 import Badge from './Badge';
 import { colors, spacing } from '../utils/theme';
 import { currency, formatDateTime } from '../utils/format';
+import { getRideTimeRemaining, isRideExpired } from '../utils/rideLifecycle';
 
 export default function RideCard({
   ride,
@@ -28,18 +29,34 @@ export default function RideCard({
   const score = matchScore || ride.matchScore || '96% Match';
   const isElectric = ride.vehicle?.vehicleType === 'ELECTRIC' || ride.vehicle?.model?.toLowerCase?.().includes('ev');
 
+  const expired = isRideExpired(ride);
+  const timeRemaining = getRideTimeRemaining(ride?.departureTime);
+
+  const displayActionTitle =
+    actionTitle === 'View Ride' && expired
+      ? 'View (Expired)'
+      : actionTitle === 'View Details' && expired
+      ? 'Details (Expired)'
+      : actionTitle;
+
   return (
-    <Card style={styles.card} onPress={onPress}>
-      {/* Top row: AI match score + Price */}
+    <Card style={[styles.card, expired && styles.expiredCard]} onPress={onPress}>
+      {/* Top row: Expiration/Status countdown + AI match score + Price */}
       <View style={styles.headerRow}>
         <View style={styles.badgeRow}>
+          <Badge
+            label={timeRemaining.label}
+            variant={timeRemaining.badgeVariant}
+            icon={timeRemaining.icon}
+            size="sm"
+          />
           <Badge label={score} variant="green" icon="sparkles-outline" size="sm" />
           {isElectric ? (
             <Badge label="Electric" variant="blue" icon="flash-outline" size="sm" />
           ) : null}
         </View>
         <View style={styles.priceContainer}>
-          <Text style={styles.price}>{currency(ride.farePerSeat)}</Text>
+          <Text style={[styles.price, expired && styles.expiredText]}>{currency(ride.farePerSeat)}</Text>
           <Text style={styles.priceSub}>/ seat</Text>
         </View>
       </View>
@@ -118,7 +135,8 @@ export default function RideCard({
           ) : null}
           {actionTitle ? (
             <Button
-              title={actionTitle}
+              title={displayActionTitle}
+              variant={expired ? 'outline' : 'primary'}
               icon="chevron-forward"
               iconPosition="right"
               size="sm"
@@ -135,6 +153,14 @@ const styles = StyleSheet.create({
   card: {
     padding: 16,
     gap: 12,
+  },
+  expiredCard: {
+    opacity: 0.88,
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E5E7EB',
+  },
+  expiredText: {
+    color: colors.muted,
   },
   headerRow: {
     flexDirection: 'row',
