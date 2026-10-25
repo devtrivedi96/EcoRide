@@ -4,30 +4,30 @@ Production-ready Express.js backend — a complete 1-to-1 conversion of the Spri
 
 ## Project Structure
 
-```
 backend-node/
-├── Dockerfile               # Multi-stage production image
-├── docker-compose.yml       # Full stack: API + PostgreSQL + Nginx
-├── docker-compose.dev.yml   # Dev override: hot-reload, exposed DB port
-├── nginx/nginx.conf         # Reverse proxy + rate limiting + WebSocket upgrade
-├── pm2.config.js            # PM2 cluster-mode config
-├── .env.example             # Safe env template (copy → .env)
+├── Dockerfile # Multi-stage production image
+├── docker-compose.yml # Full stack: API + PostgreSQL + Nginx
+├── docker-compose.dev.yml # Dev override: hot-reload, exposed DB port
+├── nginx/nginx.conf # Reverse proxy + rate limiting + WebSocket upgrade
+├── pm2.config.js # PM2 cluster-mode config
+├── .env.example # Safe env template (copy → .env)
 └── src/
-    ├── server.js            # Entry point: env validation, graceful shutdown
-    ├── app.js               # Express: Helmet, CORS, rate-limit, compression, Morgan
-    ├── config/
-    │   ├── database.js      # Sequelize connection
-    │   ├── jwtService.js    # JWT sign / verify
-    │   ├── logger.js        # Winston (console dev / JSON+rotating files prod)
-    │   ├── socket.js        # Socket.IO (chat + location tracking)
-    │   ├── validateEnv.js   # Joi env schema — refuses to boot if invalid
-    │   └── seeder.js        # DB seed (100+ users, rides, trips)
-    ├── middleware/
-    │   └── authMiddleware.js # authenticate + requireAdmin
-    ├── models/index.js       # All Sequelize models + associations
-    ├── routes/              # One file per Spring Boot controller
-    └── services/            # One file per Spring Boot service
-```
+├── server.js # Entry point: env validation, graceful shutdown
+├── app.js # Express: Helmet, CORS, rate-limit, compression, Morgan
+├── config/
+│ ├── database.js # Sequelize connection
+│ ├── jwtService.js # JWT sign / verify
+│ ├── logger.js # Winston (console dev / JSON+rotating files prod)
+│ ├── socket.js # Socket.IO (chat + location tracking)
+│ ├── validateEnv.js # Joi env schema — refuses to boot if invalid
+│ └── seeder.js # DB seed (100+ users, rides, trips)
+├── middleware/
+│ └── authMiddleware.js # authenticate + requireAdmin
+├── models/index.js # All Sequelize models + associations
+├── routes/ # One file per Spring Boot controller
+└── services/ # One file per Spring Boot service
+
+````
 
 ---
 
@@ -43,7 +43,7 @@ cd backend-node
 cp .env.example .env          # fill in your values
 npm install
 npm run dev                   # http://localhost:8081
-```
+````
 
 ---
 
