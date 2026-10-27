@@ -3,9 +3,6 @@ const router = express.Router();
 const { authenticate } = require('../middleware/authMiddleware');
 const paymentService = require('../services/paymentService');
 
-/**
- * Equivalent to Spring Boot PaymentController - /api/payments
- */
 
 // POST /api/payments/create-order — Create Razorpay order
 router.post('/create-order', authenticate, async (req, res, next) => {
